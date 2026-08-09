@@ -1286,7 +1286,7 @@ function exportPedidosPDF(){
 }
 async function confirmOrderAction(id){
   if(!confirm('Confirmar este pedido como pago? Isso vai baixar o estoque e lançar a receita no financeiro.')) return;
-  const orderRows = await q(SUPA.from('orders').select('phone,total,customer,payment_method,installments').eq('id', id));
+  const orderRows = await q(SUPA.from('orders').select('id,phone,total,customer,payment_method,installments').eq('id', id));
   const order = orderRows[0];
   const saleId = await q(SUPA.rpc('confirm_order', { p_order_id: id }));
   try{ await applyCashbackRules(order ? order.phone : null, order ? Number(order.total)||0 : 0, saleId); }catch(e){ console.error('Erro ao aplicar regra de cashback:', e); }

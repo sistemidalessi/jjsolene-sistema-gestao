@@ -6448,10 +6448,12 @@ async function renderConfig(){
 
   if(autoReplyTemplates.length){
     html += '<div class="form-block"><h4>Atendimento automático (WhatsApp)</h4>';
-    html += '<div class="note">Textos enviados automaticamente pelo sistema (aba Atendimento). Use <code>{{customer_name}}</code> e <code>{{total}}</code> onde fizer sentido — eles são substituídos pelo nome e valor de cada pedido. A mensagem de "Pedido confirmado" também precisa estar aprovada como modelo na Meta com o mesmo texto (peça ajuda se for mudar).</div>';
+    html += '<div class="note">Textos enviados automaticamente pelo sistema (aba Atendimento). Use <code>{{customer_name}}</code> e <code>{{order_number}}</code> onde fizer sentido — eles são substituídos pelo nome e número do pedido. A mensagem de "Pedido confirmado" também precisa estar aprovada como modelo na Meta com o mesmo texto (peça ajuda se for mudar).</div>';
     autoReplyTemplates.forEach(function(t){
       html += '<div class="field" style="margin-bottom:8px;"><label>'+escapeHtml(t.label)+'</label><textarea id="cf_tpl_'+escapeHtml(t.key)+'" rows="2">'+escapeHtml(t.body)+'</textarea></div>';
     });
+    html += '<div class="field"><label>Avisar por WhatsApp quando chegar mensagem nova (opcional)</label><input id="cf_atendimento_alert_phone" value="'+escapeHtml(maskPhoneBR(s.atendimento_alert_phone||''))+'" placeholder="Ex: (11) 98719-0466" oninput="applyMask(this,maskPhoneBR)"></div>';
+    html += '<div class="note">Se preencher, esse número recebe um WhatsApp automático toda vez que chegar uma mensagem nova sem ninguém acompanhando — funciona mesmo com o sistema fechado, porque é enviado direto pelo servidor. Deixe em branco pra não usar.</div>';
     html += '</div>';
   }
 
@@ -6616,6 +6618,7 @@ async function saveConfig(){
     attendant1_phone: document.getElementById('cf_at1_phone').value.trim(),
     attendant2_name: document.getElementById('cf_at2_name').value.trim(),
     attendant2_phone: document.getElementById('cf_at2_phone').value.trim(),
+    atendimento_alert_phone: (document.getElementById('cf_atendimento_alert_phone')||{value:''}).value.trim(),
     installments_max: Math.min(12, Math.max(1, Number(document.getElementById('cf_inst_max').value)||1)),
     installments_free_max: Math.min(12, Math.max(0, Number(document.getElementById('cf_inst_free').value)||0)),
     installments_interest_rate: Number(document.getElementById('cf_inst_rate').value)||0,

@@ -91,6 +91,9 @@ async function handleWhatsAppEvent(supabase: any, payload: any) {
         if (conversation.isNew) {
           await maybeSendFirstContactReply(supabase, "whatsapp", fromPhone, conversation.id);
         }
+        if (conversation.wasIdle) {
+          await maybeSendInternalAlert(supabase, "WhatsApp", name || fromPhone, body);
+        }
       }
     }
   }
@@ -134,6 +137,10 @@ async function handleMessengerOrInstagramEvent(supabase: any, payload: any, obje
       if (conversation.isNew) {
         await maybeSendFirstContactReply(supabase, channel, senderId, conversation.id);
       }
+      if (conversation.wasIdle) {
+        const channelLabel = channel === "instagram" ? "Instagram" : "Messenger";
+        await maybeSendInternalAlert(supabase, channelLabel, senderId, text);
+      }
     }
   }
 }
@@ -147,7 +154,7 @@ async function upsertConversation(
     customer_phone: string | null;
     preview: string;
   },
-): Promise<{ id: string; isNew: boolean }> {
+): Promise<{ id: string; isNew: boolean; wasIdle: boolean }> {
   const { data: existing } = await supabase.from("conversations")
     .select("id, unread_count")
     .eq("channel", args.channel)
@@ -161,7 +168,7 @@ async function upsertConversation(
       unread_count: (existing.unread_count || 0) + 1,
       resolved_at: null, // nova mensagem reabre a conversa, mesmo se tinha sido marcada como resolvida
     }).eq("id", existing.id);
-    return { id: existing.id, isNew: false };
+    return { id: existing.id, isNew: false, wasIdle: (existing.unread_count || 0) === 0 };
   }
 
   const { data: created, error } = await supabase.from("conversations").insert({
@@ -173,7 +180,23 @@ async function upsertConversation(
     unread_count: 1,
   }).select("id").single();
   if (error) throw error;
-  return { id: created.id, isNew: true };
+  return { id: created.id, isNew: true, wasIdle: true };
+}
+// Avisa por WhatsApp um número interno quando chega mensagem nova sem ninguém acompanhando —
+// funciona mesmo com o sistema fechado, já que roda no servidor. Opcional: settings.atendimento_alert_phone
+// vazio/nulo (ou coluna ainda não criada) desliga o recurso silenciosamente.
+async function maybeSendInternalAlert(supabase: any, channelLabel: string, customerLabel: string, body: string) {
+  try {
+    const { data: settings } = await supabase.from("settings")
+      .select("atendimento_alert_phone").eq("id", 1).maybeSingle();
+    const alertPhone = String(settings?.atendimento_alert_phone || "").replace(/\D/g, "");
+    if (!alertPhone) return;
+    const preview = body.length > 200 ? body.slice(0, 200) + "…" : body;
+    const text = `📩 Nova mensagem (${channelLabel}) de ${customerLabel}:\n"${preview}"`;
+    await sendWhatsAppText(WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_TOKEN, alertPhone, text);
+  } catch (e) {
+    console.error("Erro ao enviar alerta interno do Atendimento:", e);
+  }
 }
 
 async function insertInboundMessage(

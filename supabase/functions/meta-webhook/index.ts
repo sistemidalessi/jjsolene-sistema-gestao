@@ -159,6 +159,7 @@ async function upsertConversation(
       last_message_at: new Date().toISOString(),
       last_message_preview: args.preview,
       unread_count: (existing.unread_count || 0) + 1,
+      resolved_at: null, // nova mensagem reabre a conversa, mesmo se tinha sido marcada como resolvida
     }).eq("id", existing.id);
     return { id: existing.id, isNew: false };
   }

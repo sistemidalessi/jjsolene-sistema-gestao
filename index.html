@@ -563,6 +563,9 @@ async function enterApp(){
   refreshPedidosBadge();
   refreshAtendimentoBadge();
   setInterval(refreshAtendimentoBadge, 20000);
+  if(typeof Notification !== 'undefined' && Notification.permission === 'default'){
+    Notification.requestPermission();
+  }
   applyBranding();
   autoExpireStaleOrders();
 }
@@ -1336,13 +1339,43 @@ async function cancelOrderAction(id){
    ============================================================ */
 let atendimentoCache = [];
 let atendimentoCurrentId = null;
+let atendimentoSearchTerm = '';
+let atendimentoChannelFilter = 'all';
+let atendimentoShowResolved = false;
+let atendimentoKnownPendingIds = null;
 async function refreshAtendimentoBadge(){
   try{
-    const rows = await q(SUPA.from('conversations').select('id').eq('status','unclaimed'));
+    const [unclaimedRows, mineRows] = await Promise.all([
+      q(SUPA.from('conversations').select('id').eq('status','unclaimed')),
+      q(SUPA.from('conversations').select('id').eq('assigned_to', currentUser.id).gt('unread_count', 0))
+    ]);
+    const pendingIds = new Set([...unclaimedRows, ...mineRows].map(function(c){ return c.id; }));
     const badge = document.getElementById('atendimentoBadge');
-    if(rows.length > 0){ badge.textContent = rows.length; badge.classList.remove('hidden'); }
+    if(pendingIds.size > 0){ badge.textContent = pendingIds.size; badge.classList.remove('hidden'); }
     else { badge.classList.add('hidden'); }
+
+    if(atendimentoKnownPendingIds){
+      let hasNew = false;
+      pendingIds.forEach(function(id){ if(!atendimentoKnownPendingIds.has(id)) hasNew = true; });
+      if(hasNew) notifyNewAtendimento();
+    }
+    atendimentoKnownPendingIds = pendingIds;
   }catch(e){ /* silencioso — tabela pode ainda não existir até a Fase 1 ser aplicada */ }
+}
+function notifyNewAtendimento(){
+  try{
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+    osc.start(); osc.stop(ctx.currentTime + 0.35);
+  }catch(e){}
+  if(typeof Notification !== 'undefined' && Notification.permission === 'granted'){
+    try{ new Notification('Nova mensagem no Atendimento', { body: 'Você tem uma nova mensagem esperando resposta.' }); }catch(e){}
+  }
 }
 function channelIcon(channel){
   if(channel==='whatsapp') return '💬';
@@ -1376,15 +1409,49 @@ async function renderAtendimento(){
     return;
   }
   atendimentoCache = conversations;
-  const isAdmin = currentProfile && currentProfile.role==='admin';
-  const naoAtribuidas = conversations.filter(c=>c.status==='unclaimed');
-  const minhas = conversations.filter(c=>c.assigned_to===currentUser.id);
-  const deOutros = isAdmin ? conversations.filter(c=>c.status==='claimed' && c.assigned_to!==currentUser.id) : [];
 
   let html = '<div class="page-desc">Mensagens recebidas no WhatsApp/Instagram/Messenger da loja. Quem assumir uma conversa não atribuída passa a ser quem atende aquele cliente daqui pra frente.</div>';
+  html += '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">';
+  html += '<input type="text" id="atendimentoSearchBox" placeholder="Buscar por nome ou telefone..." value="'+escapeHtml(atendimentoSearchTerm)+'" style="flex:1;min-width:200px;" oninput="atendimentoSearchTerm=this.value;renderAtendimentoLists();">';
+  html += '<select id="atendimentoChannelBox" onchange="atendimentoChannelFilter=this.value;renderAtendimentoLists();">';
+  html += '<option value="all"'+(atendimentoChannelFilter==='all'?' selected':'')+'>Todos os canais</option>';
+  html += '<option value="whatsapp"'+(atendimentoChannelFilter==='whatsapp'?' selected':'')+'>💬 WhatsApp</option>';
+  html += '<option value="instagram"'+(atendimentoChannelFilter==='instagram'?' selected':'')+'>📷 Instagram</option>';
+  html += '<option value="messenger"'+(atendimentoChannelFilter==='messenger'?' selected':'')+'>👤 Messenger</option>';
+  html += '</select>';
+  html += '<label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);white-space:nowrap;">';
+  html += '<input type="checkbox" id="atendimentoResolvedBox" '+(atendimentoShowResolved?'checked ':'')+'onchange="atendimentoShowResolved=this.checked;renderAtendimentoLists();"> Mostrar resolvidas';
+  html += '</label>';
+  html += '</div>';
   html += '<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;">';
-  html += '<div style="flex:1;min-width:280px;">';
-  html += '<div class="section-title">Não atribuídas ('+naoAtribuidas.length+')</div>';
+  html += '<div style="flex:1;min-width:280px;" id="atendimentoLists"></div>';
+  html += '<div class="card" id="atendimentoThread" style="flex:1.3;min-width:320px;position:sticky;top:12px;"><div class="empty">Selecione uma conversa.</div></div>';
+  html += '</div>';
+  el.innerHTML = html;
+  renderAtendimentoLists();
+}
+function atendimentoMatchesFilter(c){
+  if(atendimentoChannelFilter!=='all' && c.channel!==atendimentoChannelFilter) return false;
+  const term = atendimentoSearchTerm.trim().toLowerCase();
+  if(!term) return true;
+  const digits = term.replace(/\D/g,'');
+  const nameMatch = (c.customer_name||'').toLowerCase().indexOf(term)!==-1;
+  const phoneMatch = digits && (c.customer_phone||'').indexOf(digits)!==-1;
+  return nameMatch || phoneMatch;
+}
+function renderAtendimentoLists(){
+  const el = document.getElementById('atendimentoLists');
+  if(!el) return;
+  const isAdmin = currentProfile && currentProfile.role==='admin';
+  const conversations = (atendimentoCache||[]).filter(atendimentoMatchesFilter);
+  const naoAtribuidas = conversations.filter(c=>c.status==='unclaimed' && !c.resolved_at);
+  const minhas = conversations.filter(c=>c.assigned_to===currentUser.id && !c.resolved_at);
+  const deOutros = isAdmin ? conversations.filter(c=>c.status==='claimed' && c.assigned_to!==currentUser.id && !c.resolved_at) : [];
+  const resolvidas = atendimentoShowResolved
+    ? conversations.filter(c=>c.resolved_at && (c.assigned_to===currentUser.id || isAdmin))
+    : [];
+
+  let html = '<div class="section-title">Não atribuídas ('+naoAtribuidas.length+')</div>';
   html += naoAtribuidas.length ? naoAtribuidas.map(c=>conversationRowHtml(c,true)).join('') : '<div class="empty">Nenhuma conversa nova.</div>';
   html += '<div class="section-title">Minhas conversas ('+minhas.length+')</div>';
   html += minhas.length ? minhas.map(c=>conversationRowHtml(c,false)).join('') : '<div class="empty">Nenhuma conversa sua ainda.</div>';
@@ -1392,9 +1459,10 @@ async function renderAtendimento(){
     html += '<div class="section-title">De outras pessoas ('+deOutros.length+')</div>';
     html += deOutros.length ? deOutros.map(c=>conversationRowHtml(c,false)).join('') : '<div class="empty">Nenhuma.</div>';
   }
-  html += '</div>';
-  html += '<div class="card" id="atendimentoThread" style="flex:1.3;min-width:320px;position:sticky;top:12px;"><div class="empty">Selecione uma conversa.</div></div>';
-  html += '</div>';
+  if(atendimentoShowResolved){
+    html += '<div class="section-title">Resolvidas ('+resolvidas.length+')</div>';
+    html += resolvidas.length ? resolvidas.map(c=>conversationRowHtml(c,false)).join('') : '<div class="empty">Nenhuma.</div>';
+  }
   el.innerHTML = html;
 }
 async function claimConversation(id){
@@ -1427,7 +1495,15 @@ async function openConversationThread(id){
   const messages = await q(SUPA.from('messages').select('*').eq('conversation_id', id).order('created_at'));
   const label = conv.customer_name || (conv.customer_phone ? maskPhoneBR(conv.customer_phone) : 'Contato');
 
-  let html = '<div style="border-bottom:1px solid var(--border);padding-bottom:8px;margin-bottom:10px;"><strong>'+channelIcon(conv.channel)+' '+escapeHtml(label)+'</strong></div>';
+  let html = '<div style="border-bottom:1px solid var(--border);padding-bottom:8px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:8px;">';
+  html += '<strong>'+channelIcon(conv.channel)+' '+escapeHtml(label)+'</strong>';
+  html += '<div style="display:flex;gap:6px;align-items:center;">';
+  if(!conv.resolved_at){
+    html += '<button class="btn small" onclick="resolveConversation(\''+id+'\')">Marcar como resolvida</button>';
+  }
+  html += '<button class="btn small" title="Fechar" onclick="closeConversationThread()" style="line-height:1;padding:2px 8px;">✕</button>';
+  html += '</div>';
+  html += '</div>';
   html += '<div id="atendimentoMessages" style="max-height:360px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;padding-right:4px;">';
   html += messages.length ? messages.map(m=>messageBubbleHtml(m)).join('') : '<div class="empty">Nenhuma mensagem ainda.</div>';
   html += '</div>';
@@ -1440,6 +1516,17 @@ async function openConversationThread(id){
     conv.unread_count = 0;
     refreshAtendimentoBadge();
   }
+}
+function closeConversationThread(){
+  atendimentoCurrentId = null;
+  const thread = document.getElementById('atendimentoThread');
+  if(thread) thread.innerHTML = '<div class="empty">Selecione uma conversa.</div>';
+}
+async function resolveConversation(id){
+  await q(SUPA.from('conversations').update({resolved_at: new Date().toISOString()}).eq('id', id));
+  toast('Conversa marcada como resolvida.');
+  closeConversationThread();
+  await renderAtendimento();
 }
 async function sendReplyMessage(){
   const id = atendimentoCurrentId;

@@ -1238,12 +1238,53 @@ function pedidoCardHtml(o, settings){
     actions.push('<button class="btn small" onclick="confirmOrderAction(\''+o.id+'\')">Confirmar pagamento</button>');
     actions.push('<button class="btn small danger" onclick="cancelOrderAction(\''+o.id+'\')">Cancelar</button>');
   }
+  if(o.status==='confirmado'){
+    actions.push('<button class="btn small outline" onclick="printOrderShippingLabel(\''+o.id+'\')">🏷️ Etiqueta</button>');
+  }
   if(currentProfile && currentProfile.role==='admin'){
     actions.push('<button class="btn small danger" onclick="deleteOrderAction(\''+o.id+'\')">Excluir</button>');
   }
   if(actions.length){ html += '<div class="row-actions">'+actions.join('')+'</div>'; }
   html += '</div></div>';
   return html;
+}
+async function printOrderShippingLabel(orderId){
+  const rows = await q(SUPA.from('orders').select('*, order_items(*, products(name,color))').eq('id', orderId));
+  const o = rows[0];
+  if(!o){ toast('Pedido não encontrado.'); return; }
+  const settings = await getSettings();
+  const storeName = settings.store_name || 'JJ Solene';
+  const itemsHtml = (o.order_items||[]).map(function(it){
+    const productName = it.products ? it.products.name : '?';
+    const color = it.products && it.products.color ? ' — '+it.products.color : '';
+    return '<tr><td>'+escapeHtml(productName)+escapeHtml(color)+'</td><td>'+escapeHtml(it.size||'')+'</td><td>'+it.qty+'</td></tr>';
+  }).join('');
+  const addressLine1 = [o.address_street, o.address_number].filter(Boolean).join(', ') + (o.address_complement ? ' — '+o.address_complement : '');
+  const addressLine2 = [o.address_neighborhood, o.address_city, o.address_state].filter(Boolean).join(' — ');
+  const w = window.open('', '_blank');
+  let html = '<html><head><title>Etiqueta — Pedido '+escapeHtml(o.customer||'')+'</title><style>';
+  html += 'body{font-family:Georgia,\'Times New Roman\',serif;padding:40px;color:#1a1a1a;max-width:620px;margin:0 auto;}';
+  html += '.lb-box{border:2px solid #2b1a1f;border-radius:6px;padding:24px 30px;}';
+  html += '.lb-logo{display:block;max-width:200px;max-height:70px;object-fit:contain;margin:0 auto 14px;}';
+  html += '.lb-title{text-align:center;font-size:17px;font-weight:bold;letter-spacing:1px;text-transform:uppercase;margin-bottom:16px;}';
+  html += '.lb-addr{font-size:15px;line-height:1.7;margin-bottom:16px;padding:12px 14px;border:1px solid #999;border-radius:4px;}';
+  html += '.lb-addr strong{font-size:16px;}';
+  html += 'table{width:100%;border-collapse:collapse;margin:12px 0;font-size:12.5px;}';
+  html += 'th,td{border:1px solid #ccc;padding:5px 8px;text-align:left;}';
+  html += 'th{background:#f4efe6;}';
+  html += '.lb-notes{font-size:13px;margin-top:12px;padding:10px 12px;background:#fbeef0;border-radius:4px;}';
+  html += '.lb-thanks{text-align:center;font-size:13.5px;margin-top:18px;color:#7a2e3a;}';
+  html += '@media print{ body{padding:16px;} }';
+  html += '</style></head><body><div class="lb-box">';
+  if(settings.logo_url){ html += '<img class="lb-logo" src="'+escapeHtml(settings.logo_url)+'">'; }
+  html += '<div class="lb-title">Etiqueta de Envio</div>';
+  html += '<div class="lb-addr"><strong>'+escapeHtml(o.customer||'')+'</strong><br>'+escapeHtml(o.phone?maskPhoneBR(o.phone):'')+'<br>'+escapeHtml(addressLine1)+'<br>'+escapeHtml(addressLine2)+'<br>CEP: '+escapeHtml(o.shipping_cep?maskCEP(o.shipping_cep):'')+'</div>';
+  html += '<table><tr><th>Peça</th><th>Tam.</th><th>Qtd</th></tr>'+itemsHtml+'</table>';
+  if(o.customer_notes){ html += '<div class="lb-notes"><strong>Observações do cliente:</strong> '+escapeHtml(o.customer_notes)+'</div>'; }
+  html += '<div class="lb-thanks">Obrigada por comprar com a '+escapeHtml(storeName)+'! Preparamos seu pedido com muito carinho. 🍒</div>';
+  html += '</div><script>window.print();<\/script></body></html>';
+  w.document.write(html);
+  w.document.close();
 }
 async function deleteOrderAction(id){
   if(!confirm('Excluir este pedido? Essa ação não pode ser desfeita.')) return;
@@ -4981,6 +5022,7 @@ const CATALOG_JS = [
 'var shippingOptions = [];',
 'var shippingLoading = false;',
 'var shippingError = "";',
+'var addrStreet = "", addrNeighborhood = "", addrCity = "", addrState = "";',
 'var FAV_KEY = "jjsolene_favoritos";',
 'function loadFavorites(){ try{ return JSON.parse(localStorage.getItem(FAV_KEY)||"[]"); }catch(e){ return []; } }',
 'function saveFavorites(list){ try{ localStorage.setItem(FAV_KEY, JSON.stringify(list)); }catch(e){} }',
@@ -5863,6 +5905,7 @@ const CATALOG_JS = [
 '  if(cep.length!==8){ shippingError="Digite um CEP válido (8 números)."; shippingOptions=[]; selectedShipping=null; renderCart(); return; }',
 '  var btn = document.getElementById("shipping_calc_btn");',
 '  shippingLoading = true; shippingError=""; shippingOptions=[]; selectedShipping=null;',
+'  addrStreet=""; addrNeighborhood=""; addrCity=""; addrState="";',
 '  renderCart();',
 '  try{',
 '    var itens = cart.filter(function(it){return !it.isGift;}).map(function(it){',
@@ -5876,11 +5919,17 @@ const CATALOG_JS = [
 '    var data = await r.json();',
 '    if(!r.ok || data.error){ throw new Error((data && data.error) || "Erro ao calcular frete."); }',
 '    var opts = (Array.isArray(data) ? data : []).filter(function(o){ return o.price && !o.error; });',
-'    if(opts.length===0){ shippingError = "Nenhuma transportadora atende esse CEP no momento."; }',
+'    if(opts.length===0){ shippingError = "Nenhuma transportadora atende esse CEP no momento — você ainda pode escolher \\"combinar depois\\" abaixo."; }',
+'    opts.push({ id: "combinar", price: 0, company: { name: "A combinar" }, name: "Combinamos o frete com você depois", delivery_time: null });',
 '    shippingOptions = opts;',
 '  }catch(e){',
 '    shippingError = "Não foi possível calcular o frete agora. Tente novamente em instantes.";',
 '  }',
+'  try{',
+'    var cr = await fetch("https://viacep.com.br/ws/"+cep+"/json/");',
+'    var cd = await cr.json();',
+'    if(!cd.erro){ addrStreet = cd.logradouro||""; addrNeighborhood = cd.bairro||""; addrCity = cd.localidade||""; addrState = cd.uf||""; }',
+'  }catch(e){ /* CEP ainda funciona pro frete mesmo se o auto-preenchimento de endereço falhar */ }',
 '  shippingLoading = false;',
 '  renderCart();',
 '}',
@@ -5936,15 +5985,33 @@ const CATALOG_JS = [
 '  if(shippingError){ footHtml += "<div class=\\"shipping-msg\\">"+esc(shippingError)+"</div>"; }',
 '  shippingOptions.forEach(function(opt, oi){',
 '    var isSel = selectedShipping && selectedShipping.id===opt.id;',
-'    footHtml += "<div class=\\"shipping-option"+(isSel?" sel":"")+"\\" onclick=\\"selectShippingOption("+oi+")\\"><div><div class=\\"so-name\\">"+esc(opt.company.name)+" - "+esc(opt.name)+"</div><div class=\\"so-time\\">Chega em até "+opt.delivery_time+" dia(s) útil(eis)</div></div><div class=\\"so-price\\">"+money(Number(opt.price))+"</div></div>";',
+'    var isCombinar = opt.id==="combinar";',
+'    var timeHtml = isCombinar ? "" : ("<div class=\\"so-time\\">Chega em até "+opt.delivery_time+" dia(s) útil(eis)</div>");',
+'    var priceHtml = isCombinar ? "" : money(Number(opt.price));',
+'    footHtml += "<div class=\\"shipping-option"+(isSel?" sel":"")+"\\" onclick=\\"selectShippingOption("+oi+")\\"><div><div class=\\"so-name\\">"+esc(opt.company.name)+(isCombinar?"":(" - "+esc(opt.name)))+"</div>"+timeHtml+"</div><div class=\\"so-price\\">"+priceHtml+"</div></div>";',
 '  });',
 '  footHtml += "</div>";',
+'  if(shippingOptions.length>0){',
+'    var curStreet = document.getElementById("chk_street") ? document.getElementById("chk_street").value : addrStreet;',
+'    var curNumber = document.getElementById("chk_number") ? document.getElementById("chk_number").value : "";',
+'    var curComplement = document.getElementById("chk_complement") ? document.getElementById("chk_complement").value : "";',
+'    var curNeighborhood = document.getElementById("chk_neighborhood") ? document.getElementById("chk_neighborhood").value : addrNeighborhood;',
+'    var curCity = document.getElementById("chk_city") ? document.getElementById("chk_city").value : addrCity;',
+'    var curState = document.getElementById("chk_state") ? document.getElementById("chk_state").value : addrState;',
+'    var curNotes = document.getElementById("chk_notes") ? document.getElementById("chk_notes").value : "";',
+'    footHtml += "<div class=\\"field\\" style=\\"margin-top:8px;\\"><label style=\\"font-size:12px;color:#8a7568;display:block;margin-bottom:4px;\\">Endereço de entrega</label></div>";',
+'    footHtml += "<input id=\\"chk_street\\" placeholder=\\"Rua/Avenida\\" value=\\""+esc(curStreet)+"\\" style=\\"margin-bottom:6px;\\">";',
+'    footHtml += "<div style=\\"display:flex;gap:6px;margin-bottom:6px;\\"><input id=\\"chk_number\\" placeholder=\\"Número\\" value=\\""+esc(curNumber)+"\\" style=\\"flex:1;\\"><input id=\\"chk_complement\\" placeholder=\\"Complemento (opcional)\\" value=\\""+esc(curComplement)+"\\" style=\\"flex:2;\\"></div>";',
+'    footHtml += "<input id=\\"chk_neighborhood\\" placeholder=\\"Bairro\\" value=\\""+esc(curNeighborhood)+"\\" style=\\"margin-bottom:6px;\\">";',
+'    footHtml += "<div style=\\"display:flex;gap:6px;margin-bottom:6px;\\"><input id=\\"chk_city\\" placeholder=\\"Cidade\\" value=\\""+esc(curCity)+"\\" style=\\"flex:2;\\"><input id=\\"chk_state\\" placeholder=\\"UF\\" maxlength=\\"2\\" value=\\""+esc(curState)+"\\" style=\\"flex:1;text-transform:uppercase;\\"></div>";',
+'    footHtml += "<textarea id=\\"chk_notes\\" placeholder=\\"Observações (opcional) — ex: embalar pra presente\\" rows=\\"2\\" style=\\"margin-bottom:6px;\\">"+esc(curNotes)+"</textarea>";',
+'  }',
 '  footHtml += "<input id=\\"chk_name\\" placeholder=\\"Seu nome\\">";',
 '  footHtml += "<input id=\\"chk_phone\\" placeholder=\\"Seu telefone (com DDD)\\" oninput=\\"applyMask(this,maskPhoneBR)\\">";',
 '  footHtml += "<select id=\\"chk_source\\"><option value=\\"\\">Como você nos conheceu?</option><option value=\\"Instagram\\">Instagram</option><option value=\\"Facebook\\">Facebook</option><option value=\\"TikTok\\">TikTok</option><option value=\\"Google\\">Google</option><option value=\\"Indicação de amiga(o)\\">Indicação de amiga(o)</option><option value=\\"WhatsApp\\">WhatsApp</option><option value=\\"Já sou cliente\\">Já sou cliente</option><option value=\\"Outro\\">Outro</option></select>";',
 '  footHtml += "<div class=\\"line\\"><span>Subtotal</span><span>"+money(subtotal)+"</span></div>";',
 '  if(discount>0){ footHtml += "<div class=\\"line\\"><span>Desconto</span><span>-"+money(discount)+"</span></div>"; }',
-'  if(selectedShipping){ footHtml += "<div class=\\"line\\"><span>Frete</span><span>"+money(shippingCost)+"</span></div>"; }',
+'  if(selectedShipping){ footHtml += "<div class=\\"line\\"><span>Frete</span><span>"+(selectedShipping.id==="combinar"?"A combinar":money(shippingCost))+"</span></div>"; }',
 '  footHtml += "<div class=\\"line total\\"><span>Total"+(selectedShipping?" (com frete)":"")+"</span><strong>"+money(grandTotal)+"</strong></div>";',
 '  if(sinalPercent < 100){',
 '    footHtml += "<div class=\\"line total\\"><span>Sinal ("+sinalPercent+"% dos produtos)</span><span>"+money(sinalValor)+"</span></div>";',
@@ -5974,8 +6041,18 @@ const CATALOG_JS = [
 '  var name = (document.getElementById("chk_name").value||"").trim();',
 '  var phone = (document.getElementById("chk_phone").value||"").replace(/\\D/g,"");',
 '  var source = (document.getElementById("chk_source").value||"").trim();',
+'  var addr = {',
+'    street: (document.getElementById("chk_street").value||"").trim(),',
+'    number: (document.getElementById("chk_number").value||"").trim(),',
+'    complement: (document.getElementById("chk_complement").value||"").trim(),',
+'    neighborhood: (document.getElementById("chk_neighborhood").value||"").trim(),',
+'    city: (document.getElementById("chk_city").value||"").trim(),',
+'    state: (document.getElementById("chk_state").value||"").trim(),',
+'    notes: (document.getElementById("chk_notes").value||"").trim()',
+'  };',
 '  if(!name || !phone){ alert("Preencha seu nome e telefone para continuar."); return; }',
 '  if(!source){ alert("Conta pra gente como você conheceu a JJ Solene antes de continuar."); return; }',
+'  if(!addr.street || !addr.number || !addr.neighborhood || !addr.city || !addr.state){ alert("Preencha o endereço completo (rua, número, bairro, cidade e UF) para continuar."); return; }',
 '  var btn = document.getElementById("checkoutBtn");',
 '  btn.disabled = true; btn.textContent = "Enviando pedido...";',
 '  var orderId = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())+"-"+Math.random().toString(36).slice(2));',
@@ -5991,6 +6068,7 @@ const CATALOG_JS = [
 '  try{ await sb.rpc("set_order_referral_source", { p_order_id: orderId, p_source: source }); }catch(e){}',
 '  try{ await sb.rpc("set_order_payment_method", { p_order_id: orderId, p_method: "pix" }); }catch(e){}',
 '  try{ await sb.rpc("set_order_shipping", { p_order_id: orderId, p_cost: Number(selectedShipping.price), p_carrier: selectedShipping.company.name+" - "+selectedShipping.name, p_cep: document.getElementById("shipping_cep").value.replace(/\\D/g,"") }); }catch(e){}',
+'  try{ await sb.rpc("set_order_address", { p_order_id: orderId, p_street: addr.street, p_number: addr.number, p_complement: addr.complement, p_neighborhood: addr.neighborhood, p_city: addr.city, p_state: addr.state, p_notes: addr.notes }); }catch(e){}',
 '  if(giftItem && giftItem.isManualGift){ try{ await sb.rpc("set_order_manual_gift", { p_order_id: orderId, p_note: giftItem.manualGiftName }); }catch(e){} }',
 '  try{ await sb.rpc("upsert_customer", { p_name: name, p_phone: phone, p_email: null, p_birth_day: null, p_birth_month: null, p_cpf: null }); }catch(e){}',
 '  var lines = cart.map(function(it){ return "- "+it.name+(it.size?(" (Tam "+it.size+")"):"")+" x"+it.qty+" — "+money(lineUnitPrice(it)*it.qty); });',
@@ -6001,6 +6079,7 @@ const CATALOG_JS = [
 '  cart = [];',
 '  appliedCoupon = null; couponMessage = "";',
 '  selectedShipping = null; shippingOptions = []; shippingError = "";',
+'  addrStreet=""; addrNeighborhood=""; addrCity=""; addrState="";',
 '  renderCart();',
 '  closeCart();',
 '  if(wpp){ window.open("https://wa.me/"+wpp+"?text="+msg, "_blank"); }',
@@ -6012,8 +6091,18 @@ const CATALOG_JS = [
 '  var name = (document.getElementById("chk_name").value||"").trim();',
 '  var phone = (document.getElementById("chk_phone").value||"").replace(/\\D/g,"");',
 '  var source = (document.getElementById("chk_source").value||"").trim();',
+'  var addr = {',
+'    street: (document.getElementById("chk_street").value||"").trim(),',
+'    number: (document.getElementById("chk_number").value||"").trim(),',
+'    complement: (document.getElementById("chk_complement").value||"").trim(),',
+'    neighborhood: (document.getElementById("chk_neighborhood").value||"").trim(),',
+'    city: (document.getElementById("chk_city").value||"").trim(),',
+'    state: (document.getElementById("chk_state").value||"").trim(),',
+'    notes: (document.getElementById("chk_notes").value||"").trim()',
+'  };',
 '  if(!name || !phone){ alert("Preencha seu nome e telefone para continuar."); return; }',
 '  if(!source){ alert("Conta pra gente como você conheceu a JJ Solene antes de continuar."); return; }',
+'  if(!addr.street || !addr.number || !addr.neighborhood || !addr.city || !addr.state){ alert("Preencha o endereço completo (rua, número, bairro, cidade e UF) para continuar."); return; }',
 '  var handle = CATALOG.settings.infinitepay_handle;',
 '  if(!handle){ alert("Pagamento por cartão ainda não configurado pela loja."); return; }',
 '  var instSel = document.getElementById("chk_installments");',
@@ -6034,6 +6123,7 @@ const CATALOG_JS = [
 '  try{ await sb.rpc("set_order_payment_method", { p_order_id: orderId, p_method: "cartao_pendente" }); }catch(e){}',
 '  try{ await sb.rpc("set_order_installments", { p_order_id: orderId, p_installments: installments }); }catch(e){}',
 '  try{ await sb.rpc("set_order_shipping", { p_order_id: orderId, p_cost: Number(selectedShipping.price), p_carrier: selectedShipping.company.name+" - "+selectedShipping.name, p_cep: document.getElementById("shipping_cep").value.replace(/\\D/g,"") }); }catch(e){}',
+'  try{ await sb.rpc("set_order_address", { p_order_id: orderId, p_street: addr.street, p_number: addr.number, p_complement: addr.complement, p_neighborhood: addr.neighborhood, p_city: addr.city, p_state: addr.state, p_notes: addr.notes }); }catch(e){}',
 '  if(giftItem && giftItem.isManualGift){ try{ await sb.rpc("set_order_manual_gift", { p_order_id: orderId, p_note: giftItem.manualGiftName }); }catch(e){} }',
 '  try{ await sb.rpc("upsert_customer", { p_name: name, p_phone: phone, p_email: null, p_birth_day: null, p_birth_month: null, p_cpf: null }); }catch(e){}',
 '  var baseTotal = (res.data && res.data.total!=null) ? res.data.total : cartSubtotal();',

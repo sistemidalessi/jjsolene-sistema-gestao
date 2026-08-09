@@ -6452,8 +6452,8 @@ async function renderConfig(){
     autoReplyTemplates.forEach(function(t){
       html += '<div class="field" style="margin-bottom:8px;"><label>'+escapeHtml(t.label)+'</label><textarea id="cf_tpl_'+escapeHtml(t.key)+'" rows="2">'+escapeHtml(t.body)+'</textarea></div>';
     });
-    html += '<div class="field"><label>Avisar por WhatsApp quando chegar mensagem nova (opcional)</label><input id="cf_atendimento_alert_phone" value="'+escapeHtml(maskPhoneBR(s.atendimento_alert_phone||''))+'" placeholder="Ex: (11) 98719-0466" oninput="applyMask(this,maskPhoneBR)"></div>';
-    html += '<div class="note">Se preencher, esse número recebe um WhatsApp automático toda vez que chegar uma mensagem nova sem ninguém acompanhando — funciona mesmo com o sistema fechado, porque é enviado direto pelo servidor. Deixe em branco pra não usar.</div>';
+    html += '<div class="field"><label>Avisar por WhatsApp quando chegar mensagem nova (opcional)</label><input id="cf_atendimento_alert_phone" value="'+escapeHtml(s.atendimento_alert_phone||'')+'" placeholder="Ex: (11) 98719-0466, (11) 91234-5678"></div>';
+    html += '<div class="note">Se preencher, esse(s) número(s) recebem um WhatsApp automático toda vez que chegar uma mensagem nova sem ninguém acompanhando — funciona mesmo com o sistema fechado, porque é enviado direto pelo servidor. Pra avisar mais de um número, separe por vírgula. Deixe em branco pra não usar.</div>';
     html += '</div>';
   }
 

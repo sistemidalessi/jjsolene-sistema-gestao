@@ -89,7 +89,7 @@ async function handleWhatsAppEvent(supabase: any, payload: any) {
         await insertInboundMessage(supabase, conversation.id, body, msg.id);
 
         if (conversation.isNew) {
-          await maybeSendFirstContactReply(supabase, "whatsapp", fromPhone, conversation.id);
+          await maybeSendFirstContactReply(supabase, "whatsapp", fromPhone, conversation.id, name);
         }
         if (conversation.wasIdle) {
           await maybeSendInternalAlert(supabase, "WhatsApp", name || fromPhone, body);
@@ -189,11 +189,18 @@ async function maybeSendInternalAlert(supabase: any, channelLabel: string, custo
   try {
     const { data: settings } = await supabase.from("settings")
       .select("atendimento_alert_phone").eq("id", 1).maybeSingle();
-    const alertPhone = String(settings?.atendimento_alert_phone || "").replace(/\D/g, "");
-    if (!alertPhone) return;
+    const alertPhones = String(settings?.atendimento_alert_phone || "")
+      .split(",").map((p: string) => p.replace(/\D/g, "")).filter((p: string) => p);
+    if (!alertPhones.length) return;
     const preview = body.length > 200 ? body.slice(0, 200) + "…" : body;
     const text = `📩 Nova mensagem (${channelLabel}) de ${customerLabel}:\n"${preview}"`;
-    await sendWhatsAppText(WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_TOKEN, alertPhone, text);
+    for (const phone of alertPhones) {
+      try {
+        await sendWhatsAppText(WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_TOKEN, phone, text);
+      } catch (e) {
+        console.error("Erro ao enviar alerta interno do Atendimento pra " + phone + ":", e);
+      }
+    }
   } catch (e) {
     console.error("Erro ao enviar alerta interno do Atendimento:", e);
   }
@@ -222,12 +229,16 @@ async function maybeSendFirstContactReply(
   channel: string,
   threadId: string,
   conversationId: string,
+  customerName?: string | null,
 ) {
   const { data: tpl } = await supabase.from("message_templates")
     .select("body, active").eq("key", "first_contact").maybeSingle();
   if (!tpl || !tpl.active) return;
 
-  const text = fillTemplate(tpl.body, {});
+  // Espaço já incluso no valor (não no template) pra "Oi{{customer_name}}!" ficar
+  // "Oi Maria!" quando tem nome, ou só "Oi!" quando não tem (Instagram/Messenger, ou
+  // contato do WhatsApp sem nome de perfil) — sem sobrar espaço solto nesse segundo caso.
+  const text = fillTemplate(tpl.body, { customer_name: customerName ? " " + customerName : "" });
   let metaMessageId: string | null = null;
   try {
     if (channel === "whatsapp") {

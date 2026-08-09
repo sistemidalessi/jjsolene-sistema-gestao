@@ -1,12 +1,20 @@
 // Recebe webhooks da Meta (WhatsApp Cloud API, Messenger, Instagram) — endpoint público,
 // sem autenticação de usuário (a própria Meta chama direto, sem JWT do Supabase). A única
 // segurança real é a validação da assinatura HMAC no corpo da requisição (verifyMetaSignature).
-import { createAdminClient, verifyMetaSignature, sendWhatsAppText, fillTemplate } from "../_shared/meta.ts";
+import {
+  createAdminClient,
+  verifyMetaSignature,
+  sendWhatsAppText,
+  sendMessengerText,
+  fillTemplate,
+} from "../_shared/meta.ts";
 
 const META_VERIFY_TOKEN = Deno.env.get("META_VERIFY_TOKEN") ?? "";
 const META_APP_SECRET = Deno.env.get("META_APP_SECRET") ?? "";
 const WHATSAPP_TOKEN = Deno.env.get("WHATSAPP_TOKEN") ?? "";
 const WHATSAPP_PHONE_NUMBER_ID = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID") ?? "";
+const PAGE_TOKEN = Deno.env.get("PAGE_TOKEN") ?? "";
+const FACEBOOK_PAGE_ID = Deno.env.get("FACEBOOK_PAGE_ID") ?? "";
 
 Deno.serve(async (req) => {
   const url = new URL(req.url);
@@ -244,8 +252,9 @@ async function maybeSendFirstContactReply(
     if (channel === "whatsapp") {
       metaMessageId = await sendWhatsAppText(WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_TOKEN, threadId, text);
     } else {
-      // Instagram/Messenger: ver nota na Fase 5, em supabase/functions/_shared/meta.ts
-      return;
+      // Instagram/Messenger: só funciona de verdade depois do App Review aprovar
+      // pages_messaging/instagram_manage_messages — até lá, cai no catch abaixo e só loga.
+      metaMessageId = await sendMessengerText(FACEBOOK_PAGE_ID, PAGE_TOKEN, threadId, text);
     }
   } catch (e) {
     console.error("Erro ao enviar resposta automática de primeiro contato:", e);

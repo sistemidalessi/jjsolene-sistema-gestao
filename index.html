@@ -1347,7 +1347,7 @@ async function sendOrderConfirmedWhatsApp(order){
     method: 'POST',
     headers: { 'Content-Type':'application/json', 'Authorization':'Bearer '+session.access_token },
     body: JSON.stringify({ phone: order.phone, template_key: 'order_confirmed',
-      params: { customer_name: order.customer||'', order_number: String(order.id||'').slice(0,8).toUpperCase() } })
+      params: { customer_name: order.customer||'', order_number: '*'+String(order.id||'').slice(0,8).toUpperCase()+'*' } })
   });
   const data = await r.json();
   if(!r.ok || !data.ok) console.error('meta-send falhou:', data.error);

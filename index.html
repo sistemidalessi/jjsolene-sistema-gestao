@@ -1501,6 +1501,9 @@ async function openConversationThread(id){
   if(!conv.resolved_at){
     html += '<button class="btn small" onclick="resolveConversation(\''+id+'\')">Marcar como resolvida</button>';
   }
+  if(currentProfile && currentProfile.role==='admin'){
+    html += '<button class="btn small danger" title="Excluir conversa" onclick="deleteConversation(\''+id+'\')" style="line-height:1;padding:2px 8px;">🗑️</button>';
+  }
   html += '<button class="btn small" title="Fechar" onclick="closeConversationThread()" style="line-height:1;padding:2px 8px;">✕</button>';
   html += '</div>';
   html += '</div>';
@@ -1525,6 +1528,14 @@ function closeConversationThread(){
 async function resolveConversation(id){
   await q(SUPA.from('conversations').update({resolved_at: new Date().toISOString()}).eq('id', id));
   toast('Conversa marcada como resolvida.');
+  closeConversationThread();
+  await renderAtendimento();
+}
+async function deleteConversation(id){
+  if(!confirm('Excluir esta conversa e todas as mensagens? Essa ação não pode ser desfeita.')) return;
+  await q(SUPA.from('messages').delete().eq('conversation_id', id));
+  await q(SUPA.from('conversations').delete().eq('id', id));
+  toast('Conversa excluída.');
   closeConversationThread();
   await renderAtendimento();
 }

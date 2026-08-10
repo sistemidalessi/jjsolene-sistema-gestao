@@ -1663,7 +1663,10 @@ async function renderEstoque(){
 
   html += '<div class="section-title">Produtos cadastrados</div>';
   html += '<div class="estoque-count" id="estoqueCount"></div>';
-  if(!isComercial){ html += bulkActionBarHtml('produto_cb', {fn:'deleteProduct', text:'produto'}); }
+  if(!isComercial){
+    html += '<label class="chk-field"><input type="checkbox" onchange="toggleAllCB(this,\'produto_cb\')"> Selecionar tudo</label>';
+    html += bulkActionBarHtml('produto_cb', {fn:'deleteProduct', text:'produto'});
+  }
   html += '<div class="products-grid" id="estoqueGrid"></div>';
   el.innerHTML = html;
   applyEstoqueFilters();

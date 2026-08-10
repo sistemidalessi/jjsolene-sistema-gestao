@@ -252,7 +252,10 @@
     <div class="sidebar-foot">
       <div class="who" id="whoLabel"></div>
       <button class="logout-btn" onclick="doLogout()">Sair</button>
-      <div style="font-size:10.5px;opacity:0.6;text-align:center;margin-top:10px;">Desenvolvido por <strong>Sistemi Dalessi</strong><br>Sistemas sob Medida</div>
+      <div style="text-align:center;margin-top:10px;opacity:0.75;">
+        <img src="assets/sistemi-dalessi-logo.jpg" alt="Sistemi Dalessi" style="width:60px;height:60px;border-radius:8px;object-fit:cover;display:block;margin:0 auto 4px;">
+        <div style="font-size:10px;">Desenvolvido por <strong>Sistemi Dalessi</strong><br>Sistemas sob Medida</div>
+      </div>
     </div>
   </div>
   <div class="main">
@@ -5179,7 +5182,7 @@ const CATALOG_JS = [
 '  wrap.appendChild(main);',
 '',
 '  var bottom = document.createElement("div"); bottom.className = "footer-bottom";',
-'  bottom.innerHTML = "<div class=\\"footer-bottom-inner\\"><div class=\\"footer-bottom-hr\\">♡</div><h3 class=\\"footer-bottom-title\\">Vista-se de <em>presença</em></h3><p class=\\"footer-bottom-copy\\">© "+year+" "+esc(s.store_name||"")+". Todos os direitos reservados.</p><p class=\\"footer-bottom-copy\\" style=\\"margin-top:4px;opacity:0.75;font-size:11.5px;\\">Sistema desenvolvido por <strong>Sistemi Dalessi</strong> — Sistemas sob Medida</p></div>";',
+'  bottom.innerHTML = "<div class=\\"footer-bottom-inner\\"><div class=\\"footer-bottom-hr\\">♡</div><h3 class=\\"footer-bottom-title\\">Vista-se de <em>presença</em></h3><p class=\\"footer-bottom-copy\\">© "+year+" "+esc(s.store_name||"")+". Todos os direitos reservados.</p><div style=\\"margin-top:8px;opacity:0.8;\\"><img src=\\"../assets/sistemi-dalessi-logo.jpg\\" alt=\\"Sistemi Dalessi\\" style=\\"width:50px;height:50px;border-radius:8px;object-fit:cover;display:block;margin:0 auto 4px;\\"><p class=\\"footer-bottom-copy\\" style=\\"font-size:11px;\\">Sistema desenvolvido por <strong>Sistemi Dalessi</strong> — Sistemas sob Medida</p></div></div>";',
 '  wrap.appendChild(bottom);',
 '',
 '  return wrap;',

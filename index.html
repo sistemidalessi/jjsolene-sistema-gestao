@@ -6335,12 +6335,17 @@ function parsePhiboCSV(text){
   return lines.map(line=>line.split(';').map(f=>f.trim()));
 }
 function looksLikeHeader(row){
-  return !!(row && /c[oó]digo/i.test(row[0]||''));
+  return !!(row && /c[oó]d/i.test(row[0]||''));
 }
 function parseBRNumber(s){
-  // Preço do Phibo vem em vírgula decimal (ex: "150,00"), não ponto-de-milhar.
+  // Aceita tanto formato brasileiro com vírgula decimal (ex: "150,00") quanto
+  // formato com ponto decimal já correto (ex: "119.90", sem separador de milhar)
+  // — exportações diferentes do Phibo já vieram nos dois formatos.
   if(!s) return 0;
-  return Number(String(s).trim().replace(/\./g,'').replace(',','.'))||0;
+  const str = String(s).trim();
+  if(!str) return 0;
+  if(str.includes(',')) return Number(str.replace(/\./g,'').replace(',','.'))||0;
+  return Number(str)||0;
 }
 async function importPhiboClientes(text){
   const rows = parsePhiboCSV(text);
@@ -6395,10 +6400,17 @@ async function importPhiboEstoque(text){
   const dataRows = looksLikeHeader(rows[0]) ? rows.slice(1) : rows;
   const result = { created:0, updated:0, skipped:0, errors:[], noNcm:0 };
 
+  // Um "Cód. Produto" do Phibo pode reunir mais de uma cor (grade de cores x tamanhos) —
+  // aqui cada produto é único por cor, então agrupamos por código+cor, não só o código,
+  // senão as cores além da primeira "somem" (o estoque delas ia parar na cor errada).
   const groups = new Map();
   dataRows.forEach((r,i)=>{
-    const sku = (r[0]||'').trim();
-    if(!sku){ result.skipped++; result.errors.push({row:i+1, reason:'Sem código do produto'}); return; }
+    const baseSku = (r[0]||'').trim();
+    if(!baseSku){ result.skipped++; result.errors.push({row:i+1, reason:'Sem código do produto'}); return; }
+    const colorHex = (r[14]||'').trim();
+    const colorDesc = (r[15]||'').trim();
+    const colorKey = (colorHex || colorDesc || 'unica').toUpperCase().replace(/[^A-Z0-9]/g,'');
+    const sku = colorKey ? baseSku+'-'+colorKey : baseSku;
     if(!groups.has(sku)) groups.set(sku, []);
     groups.get(sku).push({ r, rowNum:i+1 });
   });
@@ -6449,8 +6461,9 @@ async function importPhiboEstoque(text){
       const entryValue = costPrice;
       const costIndex = 1;
       const saleIndex = costPrice>0 ? round2(salePrice/costPrice) : 1;
+      const ref = (first[0]||'').trim();
       const payload = {
-        sku, name, category_id:categoryId, fornecedor_id:fornecedorId,
+        sku, ref, name, category_id:categoryId, fornecedor_id:fornecedorId,
         entry_value:entryValue, cost_index:costIndex, sale_index:saleIndex,
         cost_price:costPrice, sale_price:salePrice, ncm, color, color_hex:colorHex
       };

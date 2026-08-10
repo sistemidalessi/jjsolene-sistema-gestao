@@ -4632,7 +4632,11 @@ async function renderNF(){
     html += '<div class="card"><table><tr><th>Nº</th><th>Data</th><th>Cliente</th><th>Documento</th><th>Valor</th><th>Status</th><th></th></tr>';
     invoices.forEach(inv=>{
       html += '<tr><td>'+inv.number+'</td><td>'+fmtDate(inv.date)+'</td><td>'+escapeHtml(inv.customer_name)+'</td><td>'+escapeHtml(inv.customer_doc||'—')+'</td><td>'+fmtMoney(inv.total)+'</td><td><span class="tag info">'+escapeHtml(inv.status)+'</span></td>';
-      html += '<td class="row-actions"><button class="btn small outline" onclick="printInvoice(\''+inv.id+'\')">Imprimir recibo</button></td></tr>';
+      html += '<td class="row-actions"><button class="btn small outline" onclick="printInvoice(\''+inv.id+'\')">Imprimir recibo</button>';
+      if(inv.status==='Registrada (interna)'){
+        html += ' <button class="btn small danger" onclick="deleteInvoiceAction(\''+inv.id+'\')">Excluir</button>';
+      }
+      html += '</td></tr>';
     });
     html += '</table></div>';
   }
@@ -4679,6 +4683,20 @@ async function saveManualInvoice(){
   closeModal();
   await renderNF();
   toast('Nota registrada (nº '+inserted[0].number+').');
+}
+async function deleteInvoiceAction(id){
+  if(!confirm('Excluir esta nota (registro interno)? Essa ação não pode ser desfeita.')) return;
+  const rows = await q(SUPA.from('invoices').select('id,status,sale_id').eq('id', id));
+  const inv = rows[0];
+  if(!inv) return;
+  if(inv.status!=='Registrada (interna)'){
+    toast('Só é possível excluir notas registradas internamente (sem emissão real na SEFAZ).');
+    return;
+  }
+  if(inv.sale_id){ await q(SUPA.from('sales').update({invoice_id:null}).eq('id', inv.sale_id)); }
+  await q(SUPA.from('invoices').delete().eq('id', id));
+  toast('Nota excluída.');
+  await renderNF();
 }
 async function printInvoice(id){
   const rows = await q(SUPA.from('invoices').select('*').eq('id', id));
@@ -5993,20 +6011,23 @@ const CATALOG_JS = [
 '  footHtml += "</div>";',
 '  if(shippingOptions.length>0){',
 '    var curStreet = document.getElementById("chk_street") ? document.getElementById("chk_street").value : addrStreet;',
+'    var curNoNumber = document.getElementById("chk_no_number") ? document.getElementById("chk_no_number").checked : false;',
 '    var curNumber = document.getElementById("chk_number") ? document.getElementById("chk_number").value : "";',
 '    var curComplement = document.getElementById("chk_complement") ? document.getElementById("chk_complement").value : "";',
 '    var curNeighborhood = document.getElementById("chk_neighborhood") ? document.getElementById("chk_neighborhood").value : addrNeighborhood;',
 '    var curCity = document.getElementById("chk_city") ? document.getElementById("chk_city").value : addrCity;',
 '    var curState = document.getElementById("chk_state") ? document.getElementById("chk_state").value : addrState;',
 '    var curNotes = document.getElementById("chk_notes") ? document.getElementById("chk_notes").value : "";',
+'    var curGift = document.getElementById("chk_gift") ? document.getElementById("chk_gift").checked : false;',
 '    footHtml += "<div class=\\"field\\" style=\\"margin-top:8px;\\"><label style=\\"font-size:12px;color:#8a7568;display:block;margin-bottom:4px;\\">Endereço de entrega</label></div>";',
 '    footHtml += "<input id=\\"chk_street\\" placeholder=\\"Rua/Avenida\\" value=\\""+esc(curStreet)+"\\" style=\\"margin-bottom:6px;\\">";',
-'    footHtml += "<div style=\\"display:flex;gap:6px;margin-bottom:6px;\\"><input id=\\"chk_number\\" placeholder=\\"Número\\" value=\\""+esc(curNumber)+"\\" style=\\"flex:1;\\"><input id=\\"chk_complement\\" placeholder=\\"Complemento (opcional)\\" value=\\""+esc(curComplement)+"\\" style=\\"flex:2;\\"></div>";',
+'    footHtml += "<div style=\\"display:flex;gap:6px;margin-bottom:6px;align-items:center;\\"><input id=\\"chk_number\\" placeholder=\\"Número\\" value=\\""+esc(curNumber)+"\\" "+(curNoNumber?"disabled":"")+" style=\\"flex:1;\\"><label style=\\"display:flex;align-items:center;gap:4px;font-size:12px;color:#8a7568;white-space:nowrap;\\"><input type=\\"checkbox\\" id=\\"chk_no_number\\" "+(curNoNumber?"checked":"")+" onchange=\\"renderCart()\\"> S/N</label><input id=\\"chk_complement\\" placeholder=\\"Complemento (opcional)\\" value=\\""+esc(curComplement)+"\\" style=\\"flex:2;\\"></div>";',
 '    footHtml += "<input id=\\"chk_neighborhood\\" placeholder=\\"Bairro\\" value=\\""+esc(curNeighborhood)+"\\" style=\\"margin-bottom:6px;\\">";',
 '    footHtml += "<div style=\\"display:flex;gap:6px;margin-bottom:6px;\\"><input id=\\"chk_city\\" placeholder=\\"Cidade\\" value=\\""+esc(curCity)+"\\" style=\\"flex:2;\\"><input id=\\"chk_state\\" placeholder=\\"UF\\" maxlength=\\"2\\" value=\\""+esc(curState)+"\\" style=\\"flex:1;text-transform:uppercase;\\"></div>";',
-'    footHtml += "<textarea id=\\"chk_notes\\" placeholder=\\"Observações (opcional) — ex: embalar pra presente\\" rows=\\"2\\" style=\\"margin-bottom:6px;\\">"+esc(curNotes)+"</textarea>";',
+'    footHtml += "<label style=\\"display:flex;align-items:center;gap:6px;font-size:13px;color:#8a7568;margin-bottom:6px;\\"><input type=\\"checkbox\\" id=\\"chk_gift\\" "+(curGift?"checked":"")+"> 🎁 Embalar para presente?</label>";',
+'    footHtml += "<textarea id=\\"chk_notes\\" placeholder=\\"Observações (opcional)\\" rows=\\"2\\" style=\\"margin-bottom:6px;\\">"+esc(curNotes)+"</textarea>";',
 '  }',
-'  footHtml += "<input id=\\"chk_name\\" placeholder=\\"Seu nome\\">";',
+'  footHtml += "<input id=\\"chk_name\\" placeholder=\\"Nome completo\\">";',
 '  footHtml += "<input id=\\"chk_phone\\" placeholder=\\"Seu telefone (com DDD)\\" oninput=\\"applyMask(this,maskPhoneBR)\\">";',
 '  footHtml += "<select id=\\"chk_source\\"><option value=\\"\\">Como você nos conheceu?</option><option value=\\"Instagram\\">Instagram</option><option value=\\"Facebook\\">Facebook</option><option value=\\"TikTok\\">TikTok</option><option value=\\"Google\\">Google</option><option value=\\"Indicação de amiga(o)\\">Indicação de amiga(o)</option><option value=\\"WhatsApp\\">WhatsApp</option><option value=\\"Já sou cliente\\">Já sou cliente</option><option value=\\"Outro\\">Outro</option></select>";',
 '  footHtml += "<div class=\\"line\\"><span>Subtotal</span><span>"+money(subtotal)+"</span></div>";',
@@ -6041,14 +6062,17 @@ const CATALOG_JS = [
 '  var name = (document.getElementById("chk_name").value||"").trim();',
 '  var phone = (document.getElementById("chk_phone").value||"").replace(/\\D/g,"");',
 '  var source = (document.getElementById("chk_source").value||"").trim();',
+'  var noNumber = document.getElementById("chk_no_number") && document.getElementById("chk_no_number").checked;',
+'  var giftWrap = document.getElementById("chk_gift") && document.getElementById("chk_gift").checked;',
+'  var freeNotes = (document.getElementById("chk_notes").value||"").trim();',
 '  var addr = {',
 '    street: (document.getElementById("chk_street").value||"").trim(),',
-'    number: (document.getElementById("chk_number").value||"").trim(),',
+'    number: noNumber ? "S/N" : (document.getElementById("chk_number").value||"").trim(),',
 '    complement: (document.getElementById("chk_complement").value||"").trim(),',
 '    neighborhood: (document.getElementById("chk_neighborhood").value||"").trim(),',
 '    city: (document.getElementById("chk_city").value||"").trim(),',
 '    state: (document.getElementById("chk_state").value||"").trim(),',
-'    notes: (document.getElementById("chk_notes").value||"").trim()',
+'    notes: (giftWrap ? "🎁 Embalar para presente" : "") + (giftWrap && freeNotes ? " — " : "") + freeNotes',
 '  };',
 '  if(!name || !phone){ alert("Preencha seu nome e telefone para continuar."); return; }',
 '  if(!source){ alert("Conta pra gente como você conheceu a JJ Solene antes de continuar."); return; }',
@@ -6091,14 +6115,17 @@ const CATALOG_JS = [
 '  var name = (document.getElementById("chk_name").value||"").trim();',
 '  var phone = (document.getElementById("chk_phone").value||"").replace(/\\D/g,"");',
 '  var source = (document.getElementById("chk_source").value||"").trim();',
+'  var noNumber = document.getElementById("chk_no_number") && document.getElementById("chk_no_number").checked;',
+'  var giftWrap = document.getElementById("chk_gift") && document.getElementById("chk_gift").checked;',
+'  var freeNotes = (document.getElementById("chk_notes").value||"").trim();',
 '  var addr = {',
 '    street: (document.getElementById("chk_street").value||"").trim(),',
-'    number: (document.getElementById("chk_number").value||"").trim(),',
+'    number: noNumber ? "S/N" : (document.getElementById("chk_number").value||"").trim(),',
 '    complement: (document.getElementById("chk_complement").value||"").trim(),',
 '    neighborhood: (document.getElementById("chk_neighborhood").value||"").trim(),',
 '    city: (document.getElementById("chk_city").value||"").trim(),',
 '    state: (document.getElementById("chk_state").value||"").trim(),',
-'    notes: (document.getElementById("chk_notes").value||"").trim()',
+'    notes: (giftWrap ? "🎁 Embalar para presente" : "") + (giftWrap && freeNotes ? " — " : "") + freeNotes',
 '  };',
 '  if(!name || !phone){ alert("Preencha seu nome e telefone para continuar."); return; }',
 '  if(!source){ alert("Conta pra gente como você conheceu a JJ Solene antes de continuar."); return; }',

@@ -56,15 +56,19 @@ publicly, but if a custom domain gets added later, this note can go away):
 `@supabase/supabase-js@2` CDN script. Almost all data access happens client-side through the
 Supabase JS client (`SUPA` in the admin app, `sb` inside the generated catalog), with every
 admin-side call wrapped in the `q()` helper (`index.html:~225`), which unwraps `{ data, error }`,
-toasts on error, and rethrows. The one exception is the Atendimento module: two Supabase Edge
-Functions under `supabase/functions/` (Deno, project ref `pcvcpylcpuvprpkydbxf`) —
-`meta-webhook` (public, no Supabase JWT; verifies Meta's HMAC signature on the request body
-instead) receives inbound WhatsApp/Instagram/Messenger events from Meta, and `meta-send`
-(requires the caller's Supabase session JWT, re-validates conversation visibility itself since it
-runs under service role and bypasses RLS) sends outbound messages/templates. Shared helpers live
-in `supabase/functions/_shared/meta.ts`. Deploy steps and required secrets are in
-`docs/atendimento-deploy.md` / `docs/atendimento-setup-meta.md`; schema in
-`docs/atendimento-schema.sql`.
+toasts on error, and rethrows. The exceptions are three Supabase Edge Functions under
+`supabase/functions/` (Deno, project ref `pcvcpylcpuvprpkydbxf`), used for the Atendimento module
+and for shipping: `meta-webhook` (public, no Supabase JWT; verifies Meta's HMAC signature on the
+request body instead) receives inbound WhatsApp/Instagram/Messenger events from Meta, and
+`meta-send` (requires the caller's Supabase session JWT, re-validates conversation visibility
+itself since it runs under service role and bypasses RLS) sends outbound messages/templates.
+Shared helpers for those two live in `supabase/functions/_shared/meta.ts`. Deploy steps and
+required secrets are in `docs/atendimento-deploy.md` / `docs/atendimento-setup-meta.md`; schema in
+`docs/atendimento-schema.sql`. The third, `melhor-envio-callback` (public), handles the Melhor
+Envio OAuth callback (exchanges the authorization `code` for tokens, stored in the single-row
+`shipping_tokens` table) and, via a separate POST path, quotes shipping for the public catalog's
+checkout — both the admin app and the catalog call it directly by URL rather than through
+`SUPA`/`sb`, since it's plain shipping-carrier API proxying, not a Postgres RPC.
 
 - Default project credentials are hardcoded (`DEFAULT_SB_URL` / `DEFAULT_SB_ANON`) so the app works
   out of the box. The anon key is safe to expose — access is gated by Postgres Row Level Security

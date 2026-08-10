@@ -642,7 +642,7 @@ function buildViewInicio(){
   var html = "";
   panel.innerHTML = "";
   var head = document.createElement("div"); head.className="view-head";
-  head.innerHTML = "<h2>Novidades</h2><div style=\"display:flex;align-items:center;gap:10px;\"><button type=\"button\" class=\"filter-open-btn\" onclick=\"switchTab('novidades');openFilters();\">"+UI_ICONS.filter+"<span>Filtrar</span>"+(activeFilterCount()>0?"<span class=\"filter-count-badge\">"+activeFilterCount()+"</span>":"")+"</button><a onclick=\"switchTab('novidades')\">Ver todas ›</a></div>";
+  head.innerHTML = "<div style=\"display:flex;align-items:center;gap:10px;\"><h2>Novidades</h2><button type=\"button\" class=\"filter-open-btn\" onclick=\"switchTab('novidades');openFilters();\">"+UI_ICONS.filter+"<span>Filtrar</span>"+(activeFilterCount()>0?"<span class=\"filter-count-badge\">"+activeFilterCount()+"</span>":"")+"</button></div><a onclick=\"switchTab('novidades')\">Ver todas ›</a>";
   panel.appendChild(head);
   var grid = document.createElement("div"); grid.className="grid"; grid.style.padding="0 16px";
   newestProducts(6).forEach(function(p){ grid.appendChild(buildCard(p)); });

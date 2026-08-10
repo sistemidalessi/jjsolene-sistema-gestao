@@ -8,6 +8,14 @@
 //   MELHORENVIO_CLIENT_SECRET
 //   MELHORENVIO_REDIRECT_URI   (a mesma URL cadastrada no app do Melhor Envio)
 // SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY já ficam disponíveis automaticamente.
+//
+// Nota (2026-08-10): a troca do "code" pelo token (exchangeCode) às vezes falha com
+// "invalid_client"/"Client authentication failed" especificamente quando chamada a partir
+// desta function, mesmo com client_id/secret/redirect_uri corretos e confirmados — a mesma
+// chamada funciona normal a partir de outra rede. Suspeita é bloqueio de IP/rede do lado do
+// Melhor Envio (não confirmado por eles ainda). Se acontecer de novo: pegue o "code" da URL
+// de redirect antes que expire, troque por token manualmente fora da Supabase, e grave direto
+// na tabela shipping_tokens (id=1) — não precisa mexer no client_id/secret.
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
@@ -40,7 +48,7 @@ async function saveTokens(tokens: { access_token: string; refresh_token: string;
 async function exchangeCode(code: string) {
   const r = await fetch(`${ME_BASE}/oauth/token`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    headers: { "Content-Type": "application/json", Accept: "application/json", "User-Agent": "JJ Solene (contato via loja)" },
     body: JSON.stringify({
       grant_type: "authorization_code",
       client_id: Deno.env.get("MELHORENVIO_CLIENT_ID"),
@@ -57,7 +65,7 @@ async function exchangeCode(code: string) {
 async function refreshToken(refresh_token: string) {
   const r = await fetch(`${ME_BASE}/oauth/token`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    headers: { "Content-Type": "application/json", Accept: "application/json", "User-Agent": "JJ Solene (contato via loja)" },
     body: JSON.stringify({
       grant_type: "refresh_token",
       client_id: Deno.env.get("MELHORENVIO_CLIENT_ID"),

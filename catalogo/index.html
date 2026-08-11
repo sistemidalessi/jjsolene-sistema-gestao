@@ -642,7 +642,14 @@ function switchTab(tab){
   if(tab==="categorias") buildViewCategorias();
   if(tab==="novidades") buildViewNovidades();
   if(tab==="favoritos") buildViewFavoritos();
-  window.scrollTo({top:0, behavior:"smooth"});
+  if(tab==="inicio" || !panel){
+    window.scrollTo({top:0, behavior:"smooth"});
+  } else {
+    var headerEl = document.querySelector(".app-header");
+    var offset = headerEl ? headerEl.getBoundingClientRect().height : 0;
+    var y = panel.getBoundingClientRect().top + window.scrollY - offset;
+    window.scrollTo({top: Math.max(y, 0), behavior:"smooth"});
+  }
 }
 function newestProducts(limit){
   var list = CATALOG.products.slice().sort(function(a,b){ return new Date(b.created_at||0) - new Date(a.created_at||0); });

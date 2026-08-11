@@ -343,7 +343,8 @@ var UI_ICONS = {
   heart: "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 20.3s-7.2-4.4-9.6-8.7C.7 8.1 2.5 4.7 6 4.7c2 0 3.4 1 4.3 2.4C11.2 5.7 12.6 4.7 14.5 4.7c3.6 0 5.4 3.4 3.6 6.9-2.4 4.3-6.1 8.7-6.1 8.7z\"/></svg>",
   search: "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"10.5\" cy=\"10.5\" r=\"6.5\"/><path d=\"M20 20l-4.8-4.8\"/></svg>",
   user: "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"8\" r=\"3.6\"/><path d=\"M4.5 20c1.4-3.6 4.3-5.5 7.5-5.5s6.1 1.9 7.5 5.5\"/></svg>",
-  filter: "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M4 6h16M7 12h10M10.5 18h3\"/></svg>"
+  filter: "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M4 6h16M7 12h10M10.5 18h3\"/></svg>",
+  whatsapp: "<svg viewBox=\"0 0 32 32\" width=\"15\" height=\"15\" fill=\"currentColor\"><path d=\"M16.001 3C9.107 3 3.5 8.607 3.5 15.501c0 2.339.638 4.53 1.748 6.409L3 29l7.257-2.204a12.44 12.44 0 0 0 5.744 1.404h.005c6.893 0 12.5-5.607 12.5-12.5C28.506 8.607 22.899 3 16.001 3zm7.34 17.653c-.309.87-1.523 1.617-2.5 1.826-.667.14-1.538.253-4.469-.96-3.751-1.553-6.166-5.363-6.354-5.612-.181-.249-1.523-2.03-1.523-3.873s.955-2.75 1.293-3.128c.338-.378.74-.472 1.986-.472h.36c.317 0 .743-.012 1.163.888.428.917 1.454 3.166 1.583 3.397.129.23.216.5.043.79-.172.291-.259.472-.512.727-.256.257-.539.573-.771.77-.259.222-.529.462-.227.906.301.443 1.336 2.203 2.868 3.567 1.972 1.759 3.635 2.303 4.13 2.559.494.257.784.213 1.075-.129.29-.343 1.244-1.45 1.577-1.948.334-.499.667-.412 1.126-.247.459.164 2.914 1.373 3.415 1.622.501.25.834.377.955.585.121.207.121 1.203-.19 2.375z\"/></svg>"
 };
 var FOOTER_ICONS = {
   box: "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3 8l9-4 9 4-9 4-9-4z\"/><path d=\"M3 8v8l9 4 9-4V8\"/><path d=\"M12 12v8\"/><path d=\"M17 3.3v3M15.5 4.8h3\"/></svg>",
@@ -843,7 +844,7 @@ function buildCard(p){
   }
   priceRow.appendChild(priceCol);
   if(CATALOG.settings.whatsapp){
-    var waMini = document.createElement("button"); waMini.type="button"; waMini.className="wa-mini-btn"; waMini.title="Perguntar no WhatsApp"; waMini.textContent="💬";
+    var waMini = document.createElement("button"); waMini.type="button"; waMini.className="wa-mini-btn"; waMini.title="Perguntar no WhatsApp"; waMini.innerHTML=UI_ICONS.whatsapp;
     waMini.onclick = function(e){
       e.stopPropagation();
       var wpp = CATALOG.settings.whatsapp.replace(/\D/g,"");

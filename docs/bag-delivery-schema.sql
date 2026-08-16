@@ -51,10 +51,14 @@ create table if not exists bag_deliveries (
 -- `=== 'fechada'`. Com um default diferente de 'aberta' (p.ex. 'em_andamento',
 -- como em inventory_sessions), o botão de fechar sacola nunca aparecia — e como a
 -- coluna Status continuava mostrando "Em andamento" corretamente, nada denunciava
--- o problema na tela. Não deu pra confirmar qual era o default no banco (não havia
--- nenhuma sacola registrada pra testar), então o código foi ajustado pra não
--- depender disso. Se um dia alguém for reintroduzir um teste por valor específico,
--- confira antes qual é o default de verdade:
+-- o problema na tela. Não deu pra confirmar qual era o default (não havia nenhuma
+-- sacola registrada pra testar), então em vez de acertar o valor o código foi
+-- ajustado pra não depender dele.
+--
+-- Confirmado em 2026-08-16 com uma sacola de teste inserida direto por SQL: o
+-- insert passou sem informar status (ou seja, a coluna tem default) e o botão
+-- "Fechar sacola" apareceu normalmente na lista. Se um dia alguém for
+-- reintroduzir um teste por valor específico, confira antes qual é o default:
 --   select column_default from information_schema.columns
 --    where table_name='bag_deliveries' and column_name='status';
 

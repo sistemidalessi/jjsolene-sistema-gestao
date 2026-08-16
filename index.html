@@ -3018,14 +3018,18 @@ async function renderBagDelivery(){
     html += bulkActionBarHtml('bag_cb', {fn:'deleteBagDelivery', text:'sacola'});
     html += '<div class="card"><table><tr><th style="width:24px;"><input type="checkbox" onchange="toggleAllCB(this,\'bag_cb\')"></th><th>Cliente</th><th>Vendedor(a)</th><th>Enviada em</th><th>Prazo</th><th>Itens</th><th>Status</th><th></th></tr>';
     bags.forEach(b=>{
-      const overdue = b.status==='aberta' && b.deadline && new Date(b.deadline).getTime() < Date.now();
+      // "sacola ainda em andamento" = qualquer status que não seja 'fechada'. Testar por
+      // !== 'fechada' (e não por === 'aberta') deixa o botão de fechar, o aviso de prazo e o
+      // texto da coluna Status usando o mesmo critério, sem depender do default da coluna.
+      const emAndamento = b.status !== 'fechada';
+      const overdue = emAndamento && b.deadline && new Date(b.deadline).getTime() < Date.now();
       html += '<tr><td><input type="checkbox" class="bag_cb" value="'+b.id+'" onchange="updateBulkBar(\'bag_cb\')"></td><td>'+escapeHtml(b.customer_name)+(b.customer_phone?' <a href="'+waLink(b.customer_phone)+'" target="_blank" title="Chamar no WhatsApp" style="color:#128c3e">'+WHATSAPP_ICON_SVG+'</a>':'')+'</td>';
       html += '<td>'+(b.sellers?escapeHtml(b.sellers.name):'—')+'</td>';
       html += '<td>'+fmtDateTime(b.sent_at)+'</td>';
       html += '<td>'+(b.deadline?('<span'+(overdue?' class="tag bad"':'')+'>'+fmtDateTime(b.deadline)+(overdue?' (vencida)':'')+'</span>'):'—')+'</td>';
       html += '<td>'+(b.bag_delivery_items||[]).length+' peça(s)</td>';
       html += '<td>'+(b.status==='fechada'?'<span class="tag ok">Fechada</span>':'<span class="tag warn">Em andamento</span>')+'</td>';
-      html += '<td class="row-actions">'+(b.status==='aberta'?'<button class="btn small" onclick="openBagCloseForm(\''+b.id+'\')">Fechar sacola</button>':'')+(b.customer_id?' <button class="btn small outline" onclick="printBagPromissoryNote(\''+b.id+'\')">🖨️ Nota</button>':'')+' <button class="btn small danger" onclick="deleteBagDelivery(\''+b.id+'\')">Excluir</button></td></tr>';
+      html += '<td class="row-actions">'+(emAndamento?'<button class="btn small" onclick="openBagCloseForm(\''+b.id+'\')">Fechar sacola</button>':'')+(b.customer_id?' <button class="btn small outline" onclick="printBagPromissoryNote(\''+b.id+'\')">🖨️ Nota</button>':'')+' <button class="btn small danger" onclick="deleteBagDelivery(\''+b.id+'\')">Excluir</button></td></tr>';
     });
     html += '</table></div>';
   }

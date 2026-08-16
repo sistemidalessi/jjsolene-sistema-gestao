@@ -41,16 +41,22 @@ create table if not exists bag_deliveries (
   created_at timestamptz not null default now()
 );
 
--- !! CUIDADO COM O DEFAULT DE status !!
--- O app grava 'fechada' ao fechar a sacola, mas testa por 'aberta' pra decidir
--- se mostra o botão "Fechar sacola" e o aviso de prazo vencido
--- (renderBagDelivery: `b.status==='aberta'`). Ou seja: o default TEM que ser
--- 'aberta' — se no banco estiver 'em_andamento' (como em inventory_sessions),
--- o botão de fechar sacola simplesmente nunca aparece.
--- A coluna Status da tabela mostra o texto "Em andamento" pra qualquer valor
--- diferente de 'fechada', então o problema não fica visível na tela.
--- Conferir com:
---   select distinct status from bag_deliveries;
+-- SOBRE O DEFAULT DE status: o valor exato não importa mais, desde que NÃO seja
+-- 'fechada'. O app trata como "em andamento" tudo que for diferente de 'fechada'
+-- (renderBagDelivery: `b.status !== 'fechada'`), e 'fechada' é o único valor que
+-- ele próprio grava.
+--
+-- Nem sempre foi assim: até 2026-08-16 o botão "Fechar sacola" e o aviso de prazo
+-- vencido testavam por `=== 'aberta'`, enquanto a coluna Status testava por
+-- `=== 'fechada'`. Com um default diferente de 'aberta' (p.ex. 'em_andamento',
+-- como em inventory_sessions), o botão de fechar sacola nunca aparecia — e como a
+-- coluna Status continuava mostrando "Em andamento" corretamente, nada denunciava
+-- o problema na tela. Não deu pra confirmar qual era o default no banco (não havia
+-- nenhuma sacola registrada pra testar), então o código foi ajustado pra não
+-- depender disso. Se um dia alguém for reintroduzir um teste por valor específico,
+-- confira antes qual é o default de verdade:
+--   select column_default from information_schema.columns
+--    where table_name='bag_deliveries' and column_name='status';
 
 -- ---------------------------------------------------------------------
 -- Tabela: bag_delivery_items

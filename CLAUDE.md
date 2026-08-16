@@ -49,10 +49,19 @@ publicly, but if a custom domain gets added later, this note can go away):
 - **No DDL access**: schema changes (new tables/columns, RLS policies, Postgres functions) cannot
   be applied from the browser/anon key. When a task needs one, write the SQL and have the project
   owner run it in the Supabase SQL Editor — don't assume a migration file exists locally to check.
-  `docs/*.sql` holds *some* of what has been run (Atendimento, catalog filters, order address/label,
-  Phibo import, plus dated cleanup scripts), but it is **not** a complete schema: several newer
-  tables — `bag_deliveries`/`bag_delivery_items`, `inventory_sessions`/`inventory_session_items`,
-  `cashback_rules`, `bank_import_transactions`, `ncm_reference` — only exist in the Supabase project.
+  `docs/*.sql` is **not** a complete schema, and its files come in two flavours — check which one
+  you're reading before trusting it:
+  - *Actually run* against the project: `atendimento-schema.sql`, `filtros-catalogo-schema.sql`,
+    `pedidos-endereco-etiqueta-schema.sql`, `phibo-import-schema.sql`, plus the dated `limpeza-*`
+    cleanup scripts.
+  - *Reconstructed from client code*, never run, for the tables that only ever existed in the
+    Supabase project: `bag-delivery-schema.sql`, `inventario-schema.sql`, `cashback-schema.sql`,
+    `conciliacao-bancaria-schema.sql`, `ncm-reference-schema.sql`. Each carries a header saying so,
+    the introspection query to check it against the real schema, and its RLS section commented out
+    (a `create policy` under a new name *adds* a permissive policy rather than replacing the
+    existing one, so blind-running it would loosen access). Treat these as documentation of what
+    the app expects, and as a starting point for recreating the schema in a fresh project.
+
   When writing new DDL, save it under `docs/` with a descriptive (and, for cleanups, dated) name.
 - **Don't edit `catalogo-jjsolene.html` at the repo root** — that's an old backup copy of the
   catalog, kept only for reference. The live one is `catalogo/index.html`, and the source of truth

@@ -34,23 +34,38 @@ Copie **só o schema `public`**. O schema `auth` fica de fora de propósito: ele
 guarda os e-mails e os hashes de senha de quem tem login. O usuário de
 demonstração é criado do zero no passo 4.
 
-```bash
-supabase db dump --db-url "postgresql://postgres:SENHA_PROD@db.pcvcpylcpuvprpkydbxf.supabase.co:5432/postgres" --schema public -f demo-schema.sql
+Isto usa `pg_dump` e `psql`, que vêm com o PostgreSQL. Nesta máquina eles estão
+instalados em `C:\Program Files\PostgreSQL\17\bin` e **não** estão no PATH — daí
+o caminho completo nos comandos. (O guia original usava `supabase db dump`, mas
+o Supabase CLI não está disponível no winget e aquele comando é só um invólucro
+do `pg_dump`, então dá no mesmo.)
+
+**Rode você mesmo, no seu terminal.** Os comandos levam a senha do banco de
+produção embutida; ela não deve passar por chat, log de sessão nem histórico de
+ferramenta. Substitua `SENHA_PROD`, `SENHA_DEMO` e `REF_DEMO` antes de executar.
+
+```powershell
+& "C:\Program Files\PostgreSQL\17\bin\pg_dump.exe" "postgresql://postgres:SENHA_PROD@db.pcvcpylcpuvprpkydbxf.supabase.co:5432/postgres" --schema=public --schema-only --no-owner --no-privileges -f demo-schema.sql
 ```
 
-```bash
-supabase db dump --db-url "postgresql://postgres:SENHA_PROD@db.pcvcpylcpuvprpkydbxf.supabase.co:5432/postgres" --schema public --data-only -f demo-dados.sql
+```powershell
+& "C:\Program Files\PostgreSQL\17\bin\pg_dump.exe" "postgresql://postgres:SENHA_PROD@db.pcvcpylcpuvprpkydbxf.supabase.co:5432/postgres" --schema=public --data-only --no-owner --no-privileges -f demo-dados.sql
 ```
 
 E restaure os dois, nessa ordem, no projeto novo:
 
-```bash
-psql "postgresql://postgres:SENHA_DEMO@db.REF_DEMO.supabase.co:5432/postgres" -f demo-schema.sql
+```powershell
+& "C:\Program Files\PostgreSQL\17\bin\psql.exe" "postgresql://postgres:SENHA_DEMO@db.REF_DEMO.supabase.co:5432/postgres" -f demo-schema.sql
 ```
 
-```bash
-psql "postgresql://postgres:SENHA_DEMO@db.REF_DEMO.supabase.co:5432/postgres" -f demo-dados.sql
+```powershell
+& "C:\Program Files\PostgreSQL\17\bin\psql.exe" "postgresql://postgres:SENHA_DEMO@db.REF_DEMO.supabase.co:5432/postgres" -f demo-dados.sql
 ```
+
+`--no-owner --no-privileges` evita erro de dono/permissão, porque os papéis
+internos do Supabase não são exatamente os mesmos entre dois projetos. Se a
+senha tiver caractere especial (`@`, `:`, `/`, `#`), ele precisa ir codificado
+na URL — `@` vira `%40`, por exemplo.
 
 Se a restauração dos dados reclamar de chave estrangeira em `profiles` (ela
 aponta pra `auth.users`, que não veio), rode `delete from profiles;` no projeto

@@ -34,11 +34,23 @@ Copie **só o schema `public`**. O schema `auth` fica de fora de propósito: ele
 guarda os e-mails e os hashes de senha de quem tem login. O usuário de
 demonstração é criado do zero no passo 4.
 
-Isto usa `pg_dump` e `psql`, que vêm com o PostgreSQL. Nesta máquina eles estão
-instalados em `C:\Program Files\PostgreSQL\17\bin` e **não** estão no PATH — daí
-o caminho completo nos comandos. (O guia original usava `supabase db dump`, mas
-o Supabase CLI não está disponível no winget e aquele comando é só um invólucro
-do `pg_dump`, então dá no mesmo.)
+Isto usa `pg_dump` e `psql`, que vêm com o PostgreSQL. (O guia original usava
+`supabase db dump`, mas o Supabase CLI não está no winget e aquele comando é só
+um invólucro do `pg_dump`, então dá no mesmo.)
+
+Se a máquina ainda não tiver o PostgreSQL — vale conferir a cada computador
+novo, porque a instalação não acompanha o repositório:
+
+```powershell
+winget install PostgreSQL.PostgreSQL.17
+```
+
+O instalador **não** põe nada no PATH, por isso os comandos abaixo usam o
+caminho completo `C:\Program Files\PostgreSQL\17\bin`. Confira com:
+
+```powershell
+& "C:\Program Files\PostgreSQL\17\bin\pg_dump.exe" --version
+```
 
 **Rode você mesmo, no seu terminal.** Os comandos levam a senha do banco de
 produção embutida; ela não deve passar por chat, log de sessão nem histórico de

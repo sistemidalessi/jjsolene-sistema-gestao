@@ -83,6 +83,18 @@ create or replace function demo_rua(origem text) returns text as $$
          )[1 + (abs(hashtext(coalesce(origem,'x') || '.rua')) % 8)]
 $$ language sql immutable;
 
+-- Razão social falsa, pra fornecedor (que é empresa, não pessoa).
+create or replace function demo_empresa(origem text) returns text as $$
+  select (array['Malharia','Confecções','Têxtil','Distribuidora','Atacado',
+                'Indústria','Comércio','Fábrica']
+         )[1 + (abs(hashtext(coalesce(origem,'x') || '.emp')) % 8)]
+      || ' ' ||
+         (array['Aurora','Bandeirante','Céu Azul','Diamante','Estrela',
+                'Firenze','Girassol','Horizonte','Ipiranga','Jade']
+         )[1 + (abs(hashtext(coalesce(origem,'x') || '.emp2')) % 10)]
+      || ' Ltda'
+$$ language sql immutable;
+
 -- ---------------------------------------------------------------------
 -- 2. O que não dá pra mascarar: apaga
 --
@@ -113,12 +125,16 @@ delete from shipping_tokens;
 do $$
 declare
   r record;
-  -- (coluna, gerador). "name" fica de fora de propósito: products.name e
-  -- categories.name são o catálogo e precisam continuar reais.
+  -- (coluna, gerador). "name" fica de fora daqui de propósito: products.name e
+  -- categories.name são o catálogo e precisam continuar reais. As tabelas em que
+  -- "name" É dado pessoal (customers, fornecedores, sellers, profiles) são
+  -- tratadas uma a uma na seção 6 — NÃO basta esta lista.
   regras constant text[][] := array[
     ['customer_name',  'demo_nome'],
     ['customer',       'demo_nome'],
     ['pix_titular',    'demo_nome'],
+    ['contact',        'demo_nome'],   -- fornecedores.contact = pessoa de contato
+    ['address',        'demo_rua'],    -- fornecedores.address
     ['phone',          'demo_telefone'],
     ['customer_phone', 'demo_telefone'],
     ['whatsapp',       'demo_telefone'],
@@ -201,13 +217,23 @@ end $$;
 update settings set pix_key = 'demonstracao@exemplo.com.br';
 
 -- ---------------------------------------------------------------------
--- 6. Equipe
+-- 6. Colunas "name" que são dado pessoal
 --
--- profiles guarda o nome de quem trabalha na loja. Vira nome falso
--- igual ao das clientes; o vínculo com o login continua pelo id.
+-- A seção 3 não toca em nenhuma coluna chamada "name", pra não estragar
+-- products.name e categories.name. Então cada tabela em que "name" é
+-- gente (ou empresa) precisa aparecer aqui explicitamente. Se um dia
+-- surgir tabela nova com nome de pessoa em "name", acrescente na lista.
+--
+--   customers    — a cliente. É o dado mais sensível do banco inteiro.
+--   fornecedores — razão social do fornecedor; junto com purchases,
+--                  entrega de quem a loja compra e por quanto.
+--   sellers      — quem vende.
+--   profiles     — quem tem login; o vínculo continua pelo id.
 -- ---------------------------------------------------------------------
-update profiles set name = demo_nome(coalesce(name, id::text));
-update sellers  set name = demo_nome(coalesce(name, id::text));
+update customers    set name = demo_nome(coalesce(name, id::text));
+update fornecedores set name = demo_empresa(coalesce(name, id::text));
+update sellers      set name = demo_nome(coalesce(name, id::text));
+update profiles     set name = demo_nome(coalesce(name, id::text));
 
 -- ---------------------------------------------------------------------
 -- 7. Limpeza dos geradores
@@ -217,6 +243,7 @@ drop function if exists demo_telefone(text);
 drop function if exists demo_cpf(text);
 drop function if exists demo_email(text);
 drop function if exists demo_rua(text);
+drop function if exists demo_empresa(text);
 
 commit;
 
@@ -243,7 +270,18 @@ select 'orders.customer_phone', customer_phone from orders
 select 'customers.email' as onde, email from customers
  where email is not null and email <> '' and email not like '%@exemplo.com.br';
 
--- Olhada final, com olho humano: 20 clientes e 20 pedidos.
--- Nenhum nome pode ser conhecido seu.
+-- Olhada final, com olho humano. NENHUM nome aqui pode ser conhecido seu —
+-- nem de cliente, nem de fornecedor, nem da equipe.
 select name, phone, email, cpf, street, city from customers limit 20;
 select customer_name, customer_phone, address_street, address_city from orders limit 20;
+select name, contact, phone, address from fornecedores limit 20;
+select name from sellers;
+select name from profiles;
+
+-- Por que estas três últimas existem: a seção 3 ignora toda coluna chamada
+-- "name" (pra preservar produtos e categorias), então customers, fornecedores,
+-- sellers e profiles dependem da seção 6 tratar cada uma nominalmente. Se
+-- alguém acrescentar tabela com nome de pessoa em "name" e esquecer da seção 6,
+-- é aqui que isso aparece. Numa versão anterior deste script era exatamente o
+-- que acontecia com customers.name: todo o resto do cadastro virava falso e o
+-- nome real de cada cliente continuava no banco.

@@ -77,9 +77,16 @@ A tabela `este_banco_e_demo` é a trava: sem ela o script se recusa a rodar. Ela
 não existe em produção, e não deve ser criada lá em hipótese nenhuma.
 
 No fim do arquivo há as consultas de conferência. **Rode e leia o resultado
-antes de publicar o link** — as três primeiras têm que voltar vazias, e as duas
-últimas mostram 20 clientes e 20 pedidos para você bater o olho. Se reconhecer
-algum nome, alguma coisa não foi anonimizada; me avise antes de publicar.
+antes de publicar o link** — as três primeiras têm que voltar vazias; as
+seguintes mostram clientes, pedidos, fornecedores, vendedores e equipe para
+você bater o olho. Se reconhecer **qualquer** nome, alguma coisa não foi
+anonimizada; me avise antes de publicar.
+
+Olhe com atenção especial para os nomes. A anonimização automática ignora, de
+propósito, toda coluna chamada `name` (senão apagaria o catálogo de produtos), e
+por isso as tabelas em que `name` é gente — `customers`, `fornecedores`,
+`sellers`, `profiles` — dependem de estarem listadas à mão na seção 6 do script.
+É o ponto mais fácil de passar despercebido.
 
 ## 4. Criar o usuário de demonstração
 

@@ -11,6 +11,11 @@ import {
   sendWhatsAppText,
 } from "../_shared/meta.ts";
 
+// Tag da Meta pra avisos automáticos pós-compra fora da janela de 24h no Messenger/Instagram
+// (ver comentário em sendMessengerText). Só se aplica a esses dois canais — o WhatsApp usa
+// o próprio sistema de template aprovado, que não tem esse conceito de tag.
+const POST_PURCHASE_TAG = "POST_PURCHASE_UPDATE";
+
 const WHATSAPP_TOKEN = Deno.env.get("WHATSAPP_TOKEN") ?? "";
 const WHATSAPP_PHONE_NUMBER_ID = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID") ?? "";
 const PAGE_TOKEN = Deno.env.get("PAGE_TOKEN") ?? "";
@@ -147,7 +152,52 @@ async function sendViaTemplate(supabase: any, payload: any): Promise<string | nu
     last_message_preview: filledBody,
   }).eq("id", conv.id);
 
+  // Além do WhatsApp (garantido, é o telefone do próprio pedido), avisa também qualquer
+  // conversa de Instagram/Messenger que a equipe já tenha vinculado a esse mesmo telefone
+  // (aba Atendimento → campo de telefone). Best-effort: essas duas contas ainda dependem do
+  // caso de uso "Gerenciar mensagens e conteúdo no Instagram" estar aprovado pela Meta, e uma
+  // falha aqui não deve derrubar a confirmação por WhatsApp, que é a que sempre funciona.
+  await notifyLinkedSocialConversations(supabase, phone, filledBody, tpl.key);
+
   return messageId;
+}
+
+async function notifyLinkedSocialConversations(
+  supabase: any,
+  phone: string,
+  filledBody: string,
+  templateKey: string,
+) {
+  const { data: socialConvs } = await supabase.from("conversations")
+    .select("id, channel, external_thread_id")
+    .eq("customer_phone", phone)
+    .in("channel", ["instagram", "messenger"]);
+
+  for (const conv of socialConvs || []) {
+    try {
+      const messageId = await sendMessengerText(
+        FACEBOOK_PAGE_ID,
+        PAGE_TOKEN,
+        conv.external_thread_id,
+        filledBody,
+        POST_PURCHASE_TAG,
+      );
+      await supabase.from("messages").insert({
+        conversation_id: conv.id,
+        direction: "outbound",
+        sender_type: "auto",
+        body: filledBody,
+        meta_message_id: messageId,
+        template_key: templateKey,
+      });
+      await supabase.from("conversations").update({
+        last_message_at: new Date().toISOString(),
+        last_message_preview: filledBody,
+      }).eq("id", conv.id);
+    } catch (e) {
+      console.error(`notifyLinkedSocialConversations falhou (${conv.channel}, conversa ${conv.id}):`, e);
+    }
+  }
 }
 
 async function findOrCreateWhatsAppConversation(supabase: any, phone: string, customerName?: string) {

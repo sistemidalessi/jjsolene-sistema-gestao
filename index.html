@@ -1347,6 +1347,9 @@ async function confirmOrderAction(id){
   refreshPedidosBadge();
 }
 async function sendOrderConfirmedWhatsApp(order){
+  // Nome mantido por causa das chamadas existentes, mas o envio não é mais só WhatsApp:
+  // o meta-send também avisa, pelo mesmo telefone, qualquer conversa de Instagram/Messenger
+  // que a equipe tenha vinculado a esse número (ver saveConversationPhone).
   const session = (await SUPA.auth.getSession()).data.session;
   const r = await fetch(CURRENT_SB_URL + '/functions/v1/meta-send', {
     method: 'POST',
@@ -1553,6 +1556,16 @@ async function openConversationThread(id){
   html += '<button class="btn small" title="Fechar" onclick="closeConversationThread()" style="line-height:1;padding:2px 8px;">✕</button>';
   html += '</div>';
   html += '</div>';
+  if(conv.channel!=='whatsapp'){
+    // Instagram/Messenger não têm telefone por natureza (identificam a pessoa só pelo PSID/IGSID
+    // da conversa) — vincular o telefone aqui é o que permite ecoar o aviso de "pedido confirmado"
+    // também por esse canal quando a mesma cliente compra pelo catálogo (ver meta-send).
+    html += '<div class="note" style="margin-top:0;margin-bottom:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">';
+    html += '<span>📱 Telefone desta cliente (pra avisar pedidos confirmados aqui também):</span>';
+    html += '<input id="convPhoneInput" placeholder="(11) 99999-9999" value="'+escapeHtml(maskPhoneBR(conv.customer_phone||''))+'" oninput="applyMask(this,maskPhoneBR)" style="max-width:170px;">';
+    html += '<button class="btn small outline" onclick="saveConversationPhone(\''+id+'\')">Salvar</button>';
+    html += '</div>';
+  }
   html += '<div id="atendimentoMessages" style="max-height:360px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;padding-right:4px;">';
   html += messages.length ? messages.map(m=>messageBubbleHtml(m)).join('') : '<div class="empty">Nenhuma mensagem ainda.</div>';
   html += '</div>';
@@ -1570,6 +1583,15 @@ function closeConversationThread(){
   atendimentoCurrentId = null;
   const thread = document.getElementById('atendimentoThread');
   if(thread) thread.innerHTML = '<div class="empty">Selecione uma conversa.</div>';
+}
+async function saveConversationPhone(id){
+  const input = document.getElementById('convPhoneInput');
+  const digits = (input.value||'').replace(/\D/g,'');
+  if(digits && digits.length<10){ toast('Telefone incompleto.'); return; }
+  await q(SUPA.from('conversations').update({customer_phone: digits||null}).eq('id', id));
+  toast(digits ? 'Telefone vinculado.' : 'Telefone removido.');
+  await renderAtendimento();
+  await openConversationThread(id);
 }
 async function resolveConversation(id){
   await q(SUPA.from('conversations').update({resolved_at: new Date().toISOString()}).eq('id', id));
@@ -6609,7 +6631,7 @@ async function renderConfig(){
 
   if(autoReplyTemplates.length){
     html += '<div class="form-block"><h4>Atendimento automático (WhatsApp)</h4>';
-    html += '<div class="note">Textos enviados automaticamente pelo sistema (aba Atendimento). Use <code>{{customer_name}}</code> e <code>{{order_number}}</code> onde fizer sentido — eles são substituídos pelo nome e número do pedido. A mensagem de "Pedido confirmado" também precisa estar aprovada como modelo na Meta com o mesmo texto (peça ajuda se for mudar).</div>';
+    html += '<div class="note">Textos enviados automaticamente pelo sistema (aba Atendimento). Use <code>{{customer_name}}</code> e <code>{{order_number}}</code> onde fizer sentido — eles são substituídos pelo nome e número do pedido. A mensagem de "Pedido confirmado" também precisa estar aprovada como modelo na Meta com o mesmo texto (peça ajuda se for mudar). Esse aviso também chega por Instagram/Messenger, automaticamente, pra qualquer cliente cuja conversa nesses canais já tenha o telefone vinculado (aba Atendimento, ao abrir a conversa).</div>';
     autoReplyTemplates.forEach(function(t){
       html += '<div class="field" style="margin-bottom:8px;"><label>'+escapeHtml(t.label)+'</label><textarea id="cf_tpl_'+escapeHtml(t.key)+'" rows="2">'+escapeHtml(t.body)+'</textarea></div>';
     });

@@ -96,15 +96,19 @@ export async function sendMessengerText(
   pageToken: string,
   recipientId: string,
   text: string,
+  tag?: string,
 ): Promise<string | null> {
+  // Resposta manual do atendente (sem tag) só é aceita pela Meta dentro da janela de 24h
+  // desde a última mensagem da cliente. Avisos automáticos (ex: pedido confirmado) podem
+  // chegar depois disso, então usam messaging_type MESSAGE_TAG com a tag POST_PURCHASE_UPDATE
+  // — a única categoria da Meta que cobre esse caso (fora da janela, sem ser propaganda).
+  const body: Record<string, unknown> = tag
+    ? { recipient: { id: recipientId }, message: { text }, messaging_type: "MESSAGE_TAG", tag }
+    : { recipient: { id: recipientId }, message: { text }, messaging_type: "RESPONSE" };
   const res = await fetch(`https://graph.facebook.com/${GRAPH_API_VERSION}/${pageId}/messages`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": `Bearer ${pageToken}` },
-    body: JSON.stringify({
-      recipient: { id: recipientId },
-      message: { text },
-      messaging_type: "RESPONSE",
-    }),
+    body: JSON.stringify(body),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data?.error?.message || "Falha ao enviar mensagem no Messenger/Instagram");

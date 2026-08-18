@@ -85,8 +85,18 @@ toasts on error, and rethrows. The exceptions are three Supabase Edge Functions 
 and for shipping: `meta-webhook` (public, no Supabase JWT; verifies Meta's HMAC signature on the
 request body instead) receives inbound WhatsApp/Instagram/Messenger events from Meta, and
 `meta-send` (requires the caller's Supabase session JWT, re-validates conversation visibility
-itself since it runs under service role and bypasses RLS) sends outbound messages/templates.
-Shared helpers for those two live in `supabase/functions/_shared/meta.ts`. Deploy steps and
+itself since it runs under service role and bypasses RLS) sends outbound messages/templates. When
+the "pedido confirmado" template fires (from `confirmOrderAction`, keyed on the order's phone),
+`meta-send` also echoes it, best-effort, to any Instagram/Messenger conversation whose
+`conversations.customer_phone` matches that phone — sent via the Messenger Send API with the
+`POST_PURCHASE_UPDATE` tag (the one Meta category that allows a business-initiated message outside
+the normal 24h reply window), since Instagram/Messenger don't have a phone-based identity the way
+WhatsApp does and can only be reached through an existing conversation's PSID/IGSID. Staff link a
+phone to a non-WhatsApp conversation manually, from the Atendimento thread view (there's no
+automatic way to learn it). This path depends on the Instagram "Gerenciar mensagens e conteúdo no
+Instagram" use case being approved in Meta's App Review — until then it just silently does nothing,
+without affecting the WhatsApp send. Shared helpers for those two live in
+`supabase/functions/_shared/meta.ts`. Deploy steps and
 required secrets are in `docs/atendimento-deploy.md` / `docs/atendimento-setup-meta.md`; schema in
 `docs/atendimento-schema.sql`. The third, `melhor-envio-callback` (public), handles the Melhor
 Envio OAuth callback (exchanges the authorization `code` for tokens, stored in the single-row

@@ -171,6 +171,10 @@
   .size-pill.low{background:#fbe1de;color:var(--danger);border-color:#f0bdb6;}
   .color-dot{display:inline-block;width:13px;height:13px;border-radius:50%;border:1px solid rgba(0,0,0,0.15);flex:none;vertical-align:middle;}
   .product-card .pcolor{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);}
+  .variant-count{font-size:11px;color:var(--muted);}
+  .variant-dots{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 4px;}
+  .variant-dot-btn{display:flex;align-items:center;gap:5px;font-size:11px;background:var(--cream);border:1px solid var(--border);border-radius:999px;padding:3px 9px;cursor:pointer;color:var(--text);}
+  .variant-dot-btn.sel{border-color:var(--wine);box-shadow:0 0 0 1px var(--wine);font-weight:600;}
   .estoque-filters{background:#fff;border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin:12px 0 16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;align-items:end;}
   .estoque-filters .field{margin-bottom:0;}
   .estoque-filters .field label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:600;}
@@ -1715,7 +1719,8 @@ function applyEstoqueFilters(){
     if(lowOnly && !(p.product_sizes||[]).some(sz=>((Number(sz.stock)||0)-(Number(sz.reserved)||0))<=2)) return false;
     return true;
   });
-  document.getElementById('estoqueCount').textContent = filtered.length+' de '+(estoqueProductsCache||[]).length+' produto(s)';
+  const modelos = new Set(filtered.map(function(p){ return p.model_group || ('#'+p.id); })).size;
+  document.getElementById('estoqueCount').textContent = filtered.length+' de '+(estoqueProductsCache||[]).length+' produto(s)'+(modelos!==filtered.length ? ' · '+modelos+' modelo(s)' : '');
   document.getElementById('estoqueGrid').innerHTML = buildEstoqueGrid(filtered, estoqueCategoriesCache);
 }
 function toggleEstoqueColorMenu(ev){
@@ -1753,34 +1758,76 @@ function clearEstoqueFilters(){
   document.getElementById('es_low').checked = false;
   applyEstoqueFilters();
 }
+function estoqueVariantInner(p, cats, isComercial, showName){
+  const total = stockTotal(p.product_sizes);
+  const reserved = reservedTotal(p.product_sizes);
+  let h = '';
+  if(!isComercial){ h += '<label style="display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);margin-bottom:2px;"><input type="checkbox" class="produto_cb" value="'+p.id+'" onchange="updateBulkBar(\'produto_cb\')"> selecionar</label>'; }
+  if(p.image_url){ h += '<img class="product-photo-thumb" src="'+escapeHtml(p.image_url)+'" alt="'+escapeHtml(p.name)+'">'; }
+  else { h += '<div class="product-photo-thumb" style="display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px;">sem foto</div>'; }
+  if(showName){ h += '<div class="pname">'+escapeHtml(p.name)+'</div>'; }
+  if(p.color || p.color_hex){ h += '<div class="pcolor"><span class="color-dot" style="background:'+escapeHtml(p.color_hex||'#ffffff')+';"></span>'+(p.color?escapeHtml(p.color):'Cor não informada')+'</div>'; }
+  h += '<div class="pmeta">'+escapeHtml(categoryName(cats, p.category_id))+' · SKU '+escapeHtml(p.sku||'—')+'</div>';
+  h += '<div class="pprice">'+fmtMoney(p.sale_price)+(isComercial?'':' <span style="font-size:11px;color:var(--muted);font-weight:400;">(custo '+fmtMoney(p.cost_price)+')</span>')+'</div>';
+  h += '<div class="size-pills">';
+  (p.product_sizes||[]).forEach(sz=>{
+    const disp = (Number(sz.stock)||0)-(Number(sz.reserved)||0);
+    h += '<span class="size-pill'+(disp<=2?' low':'')+'">'+escapeHtml(sz.size)+': '+disp+(sz.reserved>0?' ('+sz.reserved+' reserv.)':'')+'</span>';
+  });
+  h += '</div>';
+  h += '<div class="pmeta">Estoque total: <strong>'+total+'</strong>'+(reserved>0?' · '+reserved+' reservado(s)':'')+' · '+(p.show_in_catalog!==false?'<span class="tag ok">no catálogo</span>':'<span class="tag warn">oculto</span>')+'</div>';
+  h += '<div class="row-actions" style="margin-top:6px;"><button class="btn small outline" onclick="viewProductBarcodes(\''+p.id+'\')">Ver Código</button>'+(isComercial?'':' <button class="btn small outline" onclick="openProductForm(\''+p.id+'\')">Editar</button><button class="btn small outline" onclick="openPrintLabelChooser(\''+p.id+'\')">🏷️ Etiqueta</button><button class="btn small danger" onclick="deleteProduct(\''+p.id+'\')">Excluir</button>')+'</div>';
+  return h;
+}
+
+// As cores de um mesmo modelo (mesmo products.model_group) entram num cartão só:
+// o nome aparece uma vez, as cores disponíveis viram botões no topo e o conteúdo
+// da cor escolhida fica embaixo. Produto sem irmão de cor continua num cartão
+// comum, igual antes. Cada cor segue sendo um produto próprio, com seu estoque e
+// seu código de barras — o agrupamento aqui é só de exibição.
 function buildEstoqueGrid(products, cats){
   const isComercial = currentProfile && currentProfile.role==='comercial';
   if(products.length===0){
     return '<div class="empty">Nenhum produto encontrado com esses filtros.</div>';
   }
-  let html = '';
+  const ordem = [];
+  const porModelo = new Map();
   products.forEach(p=>{
-    const total = stockTotal(p.product_sizes);
-    const reserved = reservedTotal(p.product_sizes);
+    const key = p.model_group || ('#'+p.id);
+    if(!porModelo.has(key)){ porModelo.set(key, []); ordem.push(key); }
+    porModelo.get(key).push(p);
+  });
+  let html = '';
+  ordem.forEach(key=>{
+    const cores = porModelo.get(key);
+    if(cores.length===1){
+      html += '<div class="product-card">'+estoqueVariantInner(cores[0], cats, isComercial, true)+'</div>';
+      return;
+    }
     html += '<div class="product-card">';
-    if(!isComercial){ html += '<label style="display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);margin-bottom:2px;"><input type="checkbox" class="produto_cb" value="'+p.id+'" onchange="updateBulkBar(\'produto_cb\')"> selecionar</label>'; }
-    if(p.image_url){ html += '<img class="product-photo-thumb" src="'+escapeHtml(p.image_url)+'" alt="'+escapeHtml(p.name)+'">'; }
-    else { html += '<div class="product-photo-thumb" style="display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px;">sem foto</div>'; }
-    html += '<div class="pname">'+escapeHtml(p.name)+'</div>';
-    if(p.color || p.color_hex){ html += '<div class="pcolor"><span class="color-dot" style="background:'+escapeHtml(p.color_hex||'#ffffff')+';"></span>'+(p.color?escapeHtml(p.color):'Cor não informada')+'</div>'; }
-    html += '<div class="pmeta">'+escapeHtml(categoryName(cats, p.category_id))+' · SKU '+escapeHtml(p.sku||'—')+'</div>';
-    html += '<div class="pprice">'+fmtMoney(p.sale_price)+(isComercial?'':' <span style="font-size:11px;color:var(--muted);font-weight:400;">(custo '+fmtMoney(p.cost_price)+')</span>')+'</div>';
-    html += '<div class="size-pills">';
-    (p.product_sizes||[]).forEach(sz=>{
-      const disp = (Number(sz.stock)||0)-(Number(sz.reserved)||0);
-      html += '<span class="size-pill'+(disp<=2?' low':'')+'">'+escapeHtml(sz.size)+': '+disp+(sz.reserved>0?' ('+sz.reserved+' reserv.)':'')+'</span>';
+    html += '<div class="pname">'+escapeHtml(cores[0].name)+'</div>';
+    html += '<div class="variant-count">'+cores.length+' cores disponíveis</div>';
+    html += '<div class="variant-dots">';
+    cores.forEach((p,i)=>{
+      html += '<button type="button" class="variant-dot-btn'+(i===0?' sel':'')+'" onclick="pickEstoqueVariant(this,'+i+')"><span class="color-dot" style="background:'+escapeHtml(p.color_hex||'#ffffff')+';"></span>'+escapeHtml(p.color||'sem cor')+'</button>';
     });
     html += '</div>';
-    html += '<div class="pmeta">Estoque total: <strong>'+total+'</strong>'+(reserved>0?' · '+reserved+' reservado(s)':'')+' · '+(p.show_in_catalog!==false?'<span class="tag ok">no catálogo</span>':'<span class="tag warn">oculto</span>')+'</div>';
-    html += '<div class="row-actions" style="margin-top:6px;"><button class="btn small outline" onclick="viewProductBarcodes(\''+p.id+'\')">Ver Código</button>'+(isComercial?'':' <button class="btn small outline" onclick="openProductForm(\''+p.id+'\')">Editar</button><button class="btn small outline" onclick="openPrintLabelChooser(\''+p.id+'\')">🏷️ Etiqueta</button><button class="btn small danger" onclick="deleteProduct(\''+p.id+'\')">Excluir</button>')+'</div>';
+    cores.forEach((p,i)=>{
+      html += '<div class="es-variant'+(i===0?'':' hidden')+'">'+estoqueVariantInner(p, cats, isComercial, false)+'</div>';
+    });
     html += '</div>';
   });
   return html;
+}
+
+// Troca a cor exibida dentro de um cartão de modelo. As outras cores continuam no
+// DOM, só escondidas — por isso "Selecionar tudo" segue pegando todas as cores,
+// como pegava quando cada uma tinha seu próprio cartão.
+function pickEstoqueVariant(btn, idx){
+  const card = btn.closest('.product-card');
+  if(!card) return;
+  card.querySelectorAll('.variant-dot-btn').forEach(function(b,i){ b.classList.toggle('sel', i===idx); });
+  card.querySelectorAll('.es-variant').forEach(function(v,i){ v.classList.toggle('hidden', i!==idx); });
 }
 
 function estoqueReportData(){
@@ -1814,6 +1861,8 @@ function exportEstoquePDF(){
 }
 async function openProductForm(id){
   const cats = await getCategories();
+  // Lista enxuta pro seletor "mesmo modelo de" (agrupamento de cores no Estoque).
+  const modelOptions = await q(SUPA.from('products').select('id,name,color,model_group').order('name'));
   let p = { id:null, sku:'', name:'', category_id: cats[0]?cats[0].id:'', cost_price:0, sale_price:0, description:'', promo_text:'', show_in_catalog:true, keep_visible_sold_out:false, image_url:'', ncm:'', color:'', discount_type:'none', discount_value:0, discount_min_qty:1, installments_override:false, installments_max:3, installments_free_max:3, installments_interest_rate:0, product_sizes:[{size:'P',stock:0,barcode:''},{size:'M',stock:0,barcode:''},{size:'G',stock:0,barcode:''}] };
   let media = [];
   if(id){
@@ -1861,6 +1910,20 @@ async function openProductForm(id){
   html += '<div class="field"><label>Cor</label><div style="display:flex;gap:8px;"><input id="f_color" value="'+escapeHtml(p.color||'')+'" placeholder="Ex: Vinho" style="flex:1;"><input id="f_color_hex" type="color" value="'+(p.color_hex||'#ffffff')+'" title="Amostra visual da cor" style="width:42px;height:38px;padding:2px;border:1px solid var(--border);border-radius:8px;cursor:pointer;"></div></div>';
   html += '</div>';
   html += '<div class="form-row">';
+  // Agrupamento por modelo: as cores da mesma peça ficam ligadas por model_group,
+  // e é isso que faz o Estoque mostrar "modelo → cores disponíveis" em vez de um
+  // cartão solto por cor. É só exibição — cada cor continua sendo um produto
+  // próprio, com seu estoque, seu SKU e seu código de barras.
+  window._productModelOptions = modelOptions;
+  window._productModelCurrent = p.model_group || null;
+  const irmaos = (modelOptions||[]).filter(function(o){ return o.id !== p.id; });
+  const irmaoSel = p.model_group ? (irmaos.find(function(o){ return o.model_group === p.model_group; })||null) : null;
+  html += '<div class="field"><label>Mesmo modelo de (opcional — agrupa as cores no Estoque)</label><select id="f_model_of">';
+  html += '<option value="">— É um modelo próprio —</option>';
+  html += irmaos.map(function(o){
+    return '<option value="'+o.id+'"'+(irmaoSel && irmaoSel.id===o.id ? ' selected' : '')+'>'+escapeHtml(o.name+(o.color ? ' — '+o.color : ''))+'</option>';
+  }).join('');
+  html += '</select></div>';
   html += '<div class="field"><label>REF. (opcional, aparece na etiqueta impressa)</label><input id="f_ref" value="'+escapeHtml(p.ref||'')+'" placeholder="Ex: VDM25106"></div>';
   html += '<div class="field"><label>Composição (opcional, aparece na etiqueta impressa)</label><input id="f_composition" value="'+escapeHtml(p.composition||'')+'" placeholder="Ex: 100% Poliéster"></div>';
   html += '</div>';
@@ -2044,6 +2107,23 @@ function generateBarcode(sku, size){
   const base = (sku && sku.trim()) ? sku.trim().toUpperCase().replace(/\s+/g,'') : ('JJ'+Date.now().toString(36).toUpperCase());
   return (base+'-'+size).toUpperCase().replace(/\s+/g,'');
 }
+// Decide em qual grupo de modelo o produto entra ao salvar. Escolher um "irmão"
+// copia o grupo dele (é assim que a segunda cor se junta à primeira). "Modelo
+// próprio" mantém o grupo atual quando ninguém mais o usa, e cria um novo quando o
+// produto está saindo de um grupo que era compartilhado — é o jeito de desagrupar.
+function resolveModelGroup(id){
+  const sel = document.getElementById('f_model_of');
+  const escolhido = sel ? sel.value : '';
+  const opts = window._productModelOptions || [];
+  if(escolhido){
+    const irmao = opts.find(function(o){ return o.id === escolhido; });
+    return (irmao && irmao.model_group) ? irmao.model_group : escolhido;
+  }
+  const atual = window._productModelCurrent || null;
+  const compartilhado = atual && opts.some(function(o){ return o.id !== id && o.model_group === atual; });
+  if(atual && !compartilhado) return atual;
+  return (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : ('MG'+Date.now().toString(36).toUpperCase());
+}
 async function saveProduct(id){
   const name = document.getElementById('f_name').value.trim();
   if(!name){ toast('Informe o nome do produto.'); return; }
@@ -2062,6 +2142,23 @@ async function saveProduct(id){
     const saleIdx = Number(document.getElementById('f_sale_idx').value)||0;
     const costPrice = round2(Number(document.getElementById('f_cost_calc').value)||0);
     const salePrice = round2(Number(document.getElementById('f_sale_calc').value)||0);
+    // O código de barras é a identidade da peça na hora de bipar. Se dois produtos
+    // dividirem o mesmo código, findProductByBarcode resolve sempre pro primeiro e a
+    // baixa de estoque cai na peça errada, sem nenhum erro aparecer na tela. Então
+    // barra aqui, antes de gravar.
+    const codigos = sizes.map(function(x){ return x.barcode; }).filter(Boolean);
+    if(codigos.length){
+      let dupQ = SUPA.from('product_sizes').select('barcode, products(name,color)').in('barcode', codigos);
+      if(id) dupQ = dupQ.neq('product_id', id);
+      const dup = await q(dupQ);
+      if(dup && dup.length){
+        const d = dup[0];
+        const dono = d.products ? (d.products.name+(d.products.color ? ' — '+d.products.color : '')) : 'outro produto';
+        toast('O código de barras '+d.barcode+' já pertence a: '+dono+'. Use um SKU diferente para esta cor antes de salvar.');
+        btn.disabled = false; btn.textContent = 'Salvar';
+        return;
+      }
+    }
     const payload = {
       sku: document.getElementById('f_sku').value.trim(),
       name: name,
@@ -2090,7 +2187,8 @@ async function saveProduct(id){
       installments_override: document.getElementById('f_inst_override').checked,
       installments_max: Math.min(12, Math.max(1, Number(document.getElementById('f_inst_max').value)||1)),
       installments_free_max: Math.min(12, Math.max(0, Number(document.getElementById('f_inst_free').value)||0)),
-      installments_interest_rate: Number(document.getElementById('f_inst_rate').value)||0
+      installments_interest_rate: Number(document.getElementById('f_inst_rate').value)||0,
+      model_group: resolveModelGroup(id)
     };
     let productId = id;
     if(id){

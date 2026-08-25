@@ -8,7 +8,7 @@ A single-file admin/back-office web app for "JJ Solene" (a clothing/fashion busi
 purchases, sales, bag delivery ("sacolinha"), barcode stock-counts, sellers/commissions, customers,
 marketing, finance (incl. bank reconciliation), reports, invoices, a personal task calendar,
 catalog publishing, and omnichannel customer service (Atendimento). The entire application — HTML,
-CSS, and JS — lives in **`index.html`** (~6800 lines, and growing; note that lines 4783–6240 are the
+CSS, and JS — lives in **`index.html`** (~6900 lines, and growing; note that lines 4809–6266 are the
 embedded public-catalog template, not admin code). There is no build system, package manager,
 or bundler for the app itself, and no test suite in this repo; the one piece with its own deploy
 step is the small set of Supabase Edge Functions described under Architecture below.
@@ -52,8 +52,8 @@ publicly, but if a custom domain gets added later, this note can go away):
   `docs/*.sql` is **not** a complete schema, and its files come in two flavours — check which one
   you're reading before trusting it:
   - *Actually run* against the project: `atendimento-schema.sql`, `filtros-catalogo-schema.sql`,
-    `pedidos-endereco-etiqueta-schema.sql`, `phibo-import-schema.sql`, plus the dated `limpeza-*`
-    cleanup scripts.
+    `pedidos-endereco-etiqueta-schema.sql`, `phibo-import-schema.sql`,
+    `produtos-modelo-cor-schema.sql`, plus the dated `limpeza-*` cleanup scripts.
   - *Reconstructed from client code*, never run, for the tables that only ever existed in the
     Supabase project: `bag-delivery-schema.sql`, `inventario-schema.sql`, `cashback-schema.sql`,
     `conciliacao-bancaria-schema.sql`, `ncm-reference-schema.sql`. Each carries a header saying so,

@@ -206,6 +206,20 @@ Labels are rendered with `JsBarcode` (CODE128) and printed from the "Impressão 
 section, sized for an **Elgin L42 Pro Full, 50×75mm** — several `settings` fields (`website_url`,
 `exchange_policy_text`) and product fields (`ref`, `composition`) exist only to appear on that label.
 
+**Colour variants are separate products, grouped for display only.** One row in `products` per
+colour (`color` + `color_hex`); the Phibo importer deliberately splits a supplier code into one
+product per colour, since each colour needs its own stock and its own barcode. `products.model_group`
+is an opaque key tying the colours of one model together — backfilled from `ref` (the Phibo model
+code, identical across colours) and, for manual products, a `crypto.randomUUID()` set by
+`resolveModelGroup()` on save. Both Estoque (`buildEstoqueGrid`) and the catalog (`groupByModel` in
+`CATALOG_JS`) group by it into one card per model with clickable colour swatches; picking a colour
+swaps in that colour's own product, so price/sizes/stock always belong to the selected variant.
+Grouping runs *after* filtering in both places, so a colour filter leaves only the matching variant
+in the group. **Never merge barcodes across colours** to "simplify" this: `findProductByBarcode`
+returns the first match, so a shared barcode makes every scan move the wrong product's stock, with
+no error on screen. `saveProduct` now refuses a barcode that belongs to another product, and
+`product_sizes.barcode` has a partial unique index enforcing it in the database.
+
 **Inventário** = barcode stock-count sessions. Start a Total or Parcial count (`inventory_sessions`),
 scan pieces into `inventory_session_items` (which snapshots `system_stock` at scan time next to
 `counted_qty`), then the report diffs system × counted and can push corrections through

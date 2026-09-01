@@ -2287,6 +2287,14 @@ async function viewProductBarcodes(id){
 }
 async function deleteProduct(id){
   if(!confirm('Excluir este produto do estoque? Essa ação não pode ser desfeita.')) return;
+  // Galeria de fotos/vídeo, lista de espera ("avise-me") e linhas de contagem de inventário
+  // não têm nada de histórico fiscal/financeiro pra preservar — ao contrário de vendas e
+  // pedidos, dá pra limpar direto, sem perguntar. Sem isso, um produto com só uma foto extra
+  // na galeria (ou que já apareceu numa contagem Total) travava a exclusão, e a mensagem de
+  // "tem vendas/pedidos" que aparecia lá embaixo nem era o motivo de verdade do erro.
+  await q(SUPA.from('product_media').delete().eq('product_id', id));
+  await q(SUPA.from('waitlist').delete().eq('product_id', id));
+  await q(SUPA.from('inventory_session_items').delete().eq('product_id', id));
   const { error } = await SUPA.from('products').delete().eq('id', id);
   if(!error){ await renderEstoque(); toast('Produto excluído.'); return; }
   if(error.code !== '23503'){ toast('Erro: '+error.message); return; }

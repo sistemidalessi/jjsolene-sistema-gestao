@@ -410,8 +410,12 @@ function updateBulkBar(cls){
   if(countEl) countEl.textContent = checked+' selecionado(s)';
 }
 function bulkActionBarHtml(cls, label){
+  // Etiqueta é uma ação em massa só do Estoque — as outras listas (pedidos, vendas, sacolas,
+  // clientes) reaproveitam esta mesma barra só para excluir.
+  const printBtn = cls==='produto_cb' ? '<button type="button" class="btn small outline" onclick="openBulkPrintLabels()">🏷️ Imprimir etiquetas dos selecionados</button>' : '';
   return '<div id="'+cls+'_bulkbar" class="row-actions hidden" style="margin:8px 0;align-items:center;background:#fbeecb;padding:8px 12px;border-radius:8px;">'+
     '<span id="'+cls+'_bulkcount" style="font-size:12.5px;font-weight:600;color:var(--wine-dark);"></span>'+
+    printBtn+
     '<button type="button" class="btn small danger" onclick="bulkDeleteRows(\''+cls+'\',\''+label.fn+'\',\''+label.text+'\')">🗑️ Excluir selecionados</button>'+
     '</div>';
 }
@@ -2457,6 +2461,49 @@ function printPurchaseLabels(){
     const qty = Math.max(1, Number(qtyInput.value)||1);
     for(let i=0;i<qty;i++){ entries.push({ product:r.product, sizeRow:r.sizeRow, settings:settings }); }
   });
+  closeModal();
+  printLabelSheet(entries);
+}
+async function openBulkPrintLabels(){
+  const ids = Array.from(document.querySelectorAll('.produto_cb:checked')).map(cb=>cb.value);
+  if(ids.length===0){ toast('Selecione ao menos um produto.'); return; }
+  const products = await q(SUPA.from('products').select('*, product_sizes(*)').in('id', ids));
+  const settings = await getSettings();
+  const rows = [];
+  products.forEach(p=>{
+    (p.product_sizes||[]).forEach(sz=>{
+      // Sugere a quantidade de etiquetas pelo estoque atual daquele tamanho — quem está
+      // reimprimindo em lote normalmente quer 1 etiqueta por peça que já tem na loja.
+      rows.push({ product: p, sizeRow: sz, qty: Math.max(1, Number(sz.stock)||0) });
+    });
+  });
+  if(rows.length===0){ toast('Os produtos selecionados não têm tamanhos cadastrados.'); return; }
+  let html = '<h3>Imprimir etiquetas dos selecionados</h3>';
+  html += '<div class="page-desc">'+ids.length+' produto(s) — desmarque o que não quiser e ajuste a quantidade de cada tamanho antes de imprimir.</div>';
+  html += '<div class="items-editor" style="max-height:360px;overflow-y:auto;">';
+  rows.forEach((r,idx)=>{
+    const hasBarcode = !!(r.sizeRow && r.sizeRow.barcode);
+    html += '<div class="item-line"><label style="display:flex;align-items:center;gap:8px;flex:1;"><input type="checkbox" class="pl_bulk_cb" data-idx="'+idx+'" '+(hasBarcode?'checked':'disabled')+'><span>'+escapeHtml(r.product.name)+' ('+escapeHtml(r.sizeRow.size)+')'+(hasBarcode?'':' — sem código de barras')+'</span></label><input type="number" min="1" value="'+r.qty+'" class="pl_bulk_qty" data-idx="'+idx+'" style="width:60px;" '+(hasBarcode?'':'disabled')+'></div>';
+  });
+  html += '</div>';
+  html += '<div class="row-actions" style="margin-top:12px;"><button class="btn" onclick="printBulkLabels()">Imprimir selecionadas</button><button class="btn outline" onclick="closeModal()">Cancelar</button></div>';
+  window._bulkLabelRows = rows;
+  window._bulkLabelSettings = settings;
+  openModal(html);
+}
+function printBulkLabels(){
+  const rows = window._bulkLabelRows||[];
+  const settings = window._bulkLabelSettings;
+  const entries = [];
+  document.querySelectorAll('.pl_bulk_cb').forEach(function(cb){
+    if(!cb.checked) return;
+    const idx = Number(cb.dataset.idx);
+    const r = rows[idx];
+    const qtyInput = document.querySelector('.pl_bulk_qty[data-idx="'+idx+'"]');
+    const qty = Math.max(1, Number(qtyInput.value)||1);
+    for(let i=0;i<qty;i++){ entries.push({ product:r.product, sizeRow:r.sizeRow, settings:settings }); }
+  });
+  if(entries.length===0){ toast('Nenhum tamanho selecionado.'); return; }
   closeModal();
   printLabelSheet(entries);
 }

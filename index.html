@@ -175,6 +175,14 @@
   .variant-dots{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 4px;}
   .variant-dot-btn{display:flex;align-items:center;gap:5px;font-size:11px;background:var(--cream);border:1px solid var(--border);border-radius:999px;padding:3px 9px;cursor:pointer;color:var(--text);}
   .variant-dot-btn.sel{border-color:var(--wine);box-shadow:0 0 0 1px var(--wine);font-weight:600;}
+  .size-mode{display:flex;gap:6px;margin-bottom:8px;}
+  .size-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(74px,1fr));gap:8px;}
+  .size-box{border:1px solid var(--border);border-radius:9px;padding:6px;text-align:center;background:#fff;position:relative;}
+  .size-box.on{border-color:var(--wine);background:#fdf7f8;}
+  .size-box-label{font-size:11.5px;font-weight:700;color:var(--wine-dark);margin-bottom:3px;}
+  .size-box input{width:100%;text-align:center;padding:4px 2px;font-size:13px;}
+  .size-box-x{position:absolute;top:-7px;right:-7px;width:19px;height:19px;border-radius:50%;border:1px solid var(--border);background:#fff;color:var(--muted);font-size:11px;line-height:1;cursor:pointer;padding:0;}
+  .cor-row{display:grid;grid-template-columns:1fr 46px 92px 34px;gap:6px;align-items:center;margin-bottom:6px;}
   .estoque-filters{background:#fff;border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin:12px 0 16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;align-items:end;}
   .estoque-filters .field{margin-bottom:0;}
   .estoque-filters .field label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:600;}
@@ -1911,7 +1919,7 @@ async function openProductForm(id){
   html += '<div id="f_ncm_suggestions" class="ncm-suggestions hidden"></div>';
   html += '<div class="note" style="margin-top:4px;">Busca nos 260 códigos de roupas/acessórios da tabela oficial da Receita Federal (vigente em 03/08/2026). Não achou? <a href="https://portalunico.siscomex.gov.br/classif/#/sumario?perfil=publico" target="_blank">consulte a fonte oficial completa ↗</a></div>';
   html += '</div>';
-  html += '<div class="field"><label>Cor</label><div style="display:flex;gap:8px;"><input id="f_color" value="'+escapeHtml(p.color||'')+'" placeholder="Ex: Vinho" style="flex:1;"><input id="f_color_hex" type="color" value="'+(p.color_hex||'#ffffff')+'" title="Amostra visual da cor" style="width:42px;height:38px;padding:2px;border:1px solid var(--border);border-radius:8px;cursor:pointer;"></div></div>';
+  html += '<div class="field" id="f_color_wrap"><label>Cor</label><div style="display:flex;gap:8px;"><input id="f_color" value="'+escapeHtml(p.color||'')+'" placeholder="Ex: Vinho" style="flex:1;"><input id="f_color_hex" type="color" value="'+(p.color_hex||'#ffffff')+'" title="Amostra visual da cor" style="width:42px;height:38px;padding:2px;border:1px solid var(--border);border-radius:8px;cursor:pointer;"></div></div>';
   html += '</div>';
   html += '<div class="form-row">';
   // Agrupamento por modelo: as cores da mesma peça ficam ligadas por model_group,
@@ -1938,8 +1946,7 @@ async function openProductForm(id){
   html += '<input id="f_width" type="number" step="1" min="0" value="'+(p.width_cm||'')+'" placeholder="Largura (cm)">';
   html += '<input id="f_height" type="number" step="1" min="0" value="'+(p.height_cm||'')+'" placeholder="Altura (cm)">';
   html += '</div></div>';
-  html += '<div class="field" style="margin-bottom:8px;"><label>Tamanhos, estoque e código de barras (formato: P:5:789..., M:3, G:2 — código de barras é opcional)</label><input id="f_sizes" value="'+escapeHtml(sizesStr)+'"></div>';
-  html += '<div class="note" style="margin-top:-4px;margin-bottom:8px;">Tirar um tamanho da lista só remove ele de verdade se o estoque já estiver zerado (ex: apague o "M:3" só depois de zerar pra "M:0" e salvar) — assim nenhuma peça reservada em uma sacolinha ou pedido some do sistema sem querer.</div>';
+  html += sizeEditorHtml(p, !id);
   html += '<div class="section-title" style="margin-top:10px;">Desconto por quantidade (opcional)</div>';
   html += '<div class="form-row">';
   html += '<div class="field"><label>Tipo</label><select id="f_disc_type"><option value="none"'+(p.discount_type==='none'?' selected':'')+'>Sem desconto</option><option value="percent"'+(p.discount_type==='percent'?' selected':'')+'>Percentual (%)</option><option value="fixed"'+(p.discount_type==='fixed'?' selected':'')+'>Valor fixo por peça (R$)</option></select></div>';
@@ -1971,6 +1978,7 @@ async function openProductForm(id){
   html += '<button class="btn outline" onclick="closeModal()">Cancelar</button>';
   html += '</div>';
   openModal(html);
+  initSizeEditor(p, !id);
 }
 function toggleInlineNewCategory(selectId){
   document.getElementById(selectId+'_new_row').classList.toggle('hidden');
@@ -2112,6 +2120,178 @@ function generateBarcode(sku, size){
   const base = (sku && sku.trim()) ? sku.trim().toUpperCase().replace(/\s+/g,'') : ('JJ'+Date.now().toString(36).toUpperCase());
   return (base+'-'+size).toUpperCase().replace(/\s+/g,'');
 }
+/* ============================================================
+   EDITOR DE TAMANHOS E CORES (cadastro de produto)
+
+   Substitui o campo de texto "P:5:789..., M:3" por quadrinhos com a
+   quantidade. O formato antigo continua existindo por baixo: o editor
+   escreve nele, num input escondido (#f_sizes), pra que saveProduct,
+   parseSizesInput e a remoção segura de tamanho sigam funcionando sem
+   alteração nenhuma.
+
+   Em branco = a peça não tem esse tamanho. Zero = tem, mas está esgotado —
+   e aí continua aparecendo no catálogo, que é o que faz sentido junto com o
+   "manter visível quando esgotar" e com a lista de espera "avise-me".
+   ============================================================ */
+// Escada oferecida por padrão. P/M e G/GG estão aqui porque são comuns no
+// estoque real da loja; numéricos (36, 38, 40...) entram pelo "+ adicionar".
+const TAMANHOS_PADRAO = ['PP','P','M','G','GG','XG','P/M','G/GG'];
+
+function sizeEditorHtml(p, ehNovo){
+  let h = '<div class="field" style="margin-bottom:8px;"><label>Tamanhos e quantidades</label>';
+  h += '<div class="size-mode">';
+  h += '<button type="button" class="btn small" id="f_mode_grade" onclick="setSizeMode(&quot;grade&quot;)">Grade de tamanhos</button>';
+  h += '<button type="button" class="btn small outline" id="f_mode_unico" onclick="setSizeMode(&quot;unico&quot;)">Tamanho único</button>';
+  h += '</div><div id="f_sizes_area"></div><input type="hidden" id="f_sizes" value=""></div>';
+  if(ehNovo) h += '<div id="f_cores_area" class="hidden"></div>';
+  return h;
+}
+
+function initSizeEditor(p, ehNovo){
+  const existentes = (p.product_sizes||[]).filter(function(sz){ return sz.size; });
+  window._ehProdutoNovo = !!ehNovo;
+  // "Tamanho único" = exatamente uma linha, e ela é U/Único (rank 0 na escada).
+  const soUnico = existentes.length===1 && sizeSortRank(existentes[0].size)===0;
+  window._sizeRows = {};
+  existentes.forEach(function(sz){
+    window._sizeRows[sz.size] = { qtd: String(Number(sz.stock)||0), barcode: sz.barcode||'' };
+  });
+  window._colorRows = [{ cor: p.color||'', hex: p.color_hex||'#ffffff', qtd: soUnico ? String(Number(existentes[0].stock)||0) : '' }];
+  setSizeMode(soUnico ? 'unico' : 'grade');
+}
+
+function setSizeMode(modo){
+  window._sizeMode = modo;
+  const bg = document.getElementById('f_mode_grade'), bu = document.getElementById('f_mode_unico');
+  if(bg) bg.className = 'btn small' + (modo==='grade' ? '' : ' outline');
+  if(bu) bu.className = 'btn small' + (modo==='unico' ? '' : ' outline');
+  const cores = document.getElementById('f_cores_area');
+  if(cores) cores.classList.toggle('hidden', modo!=='unico');
+  // No modo tamanho único quem manda é a lista de cores; deixar os dois na tela
+  // deixaria dúvida sobre qual vale.
+  const campoCor = document.getElementById('f_color_wrap');
+  if(campoCor) campoCor.classList.toggle('hidden', modo==='unico' && !!window._ehProdutoNovo);
+  renderSizeArea();
+  if(modo==='unico') renderColorRows();
+  syncSizesField();
+}
+
+function renderSizeArea(){
+  const area = document.getElementById('f_sizes_area');
+  if(!area) return;
+  if(window._sizeMode==='unico'){
+    area.innerHTML = '<div class="note">Peça de tamanho único — a quantidade de cada cor vai na lista abaixo.</div>';
+    return;
+  }
+  const extras = Object.keys(window._sizeRows||{}).filter(function(t){ return TAMANHOS_PADRAO.indexOf(t)===-1; });
+  const lista = TAMANHOS_PADRAO.concat(extras.sort(function(a,b){ return sizeSortRank(a)-sizeSortRank(b); }));
+  let h = '<div class="size-grid">';
+  lista.forEach(function(t){
+    const row = (window._sizeRows||{})[t];
+    const val = (row && row.qtd!==undefined) ? String(row.qtd) : '';
+    const ehExtra = TAMANHOS_PADRAO.indexOf(t)===-1;
+    const arg = '&quot;'+escapeHtml(t)+'&quot;';
+    h += '<div class="size-box'+(val!==''?' on':'')+'">';
+    if(ehExtra) h += '<button type="button" class="size-box-x" title="Tirar este tamanho" onclick="removerTamanhoExtra('+arg+')">×</button>';
+    h += '<div class="size-box-label">'+escapeHtml(t)+'</div>';
+    h += '<input type="number" min="0" step="1" placeholder="—" value="'+escapeHtml(val)+'" oninput="setTamanhoQtd('+arg+', this.value)">';
+    h += '</div>';
+  });
+  h += '</div>';
+  h += '<div class="row-actions" style="margin-top:8px;"><input id="f_novo_tam" placeholder="Outro tamanho (ex: 38, 44)" style="max-width:200px;"> <button type="button" class="btn small outline" onclick="adicionarTamanhoExtra()">+ Adicionar tamanho</button></div>';
+  h += '<div class="note" style="margin-top:6px;">Deixe <strong>em branco</strong> o tamanho que a peça não tem. Coloque <strong>0</strong> no tamanho que existe mas acabou — ele continua no catálogo, com o botão de avisar quando chegar.</div>';
+  area.innerHTML = h;
+}
+
+function setTamanhoQtd(tam, valor){
+  if(!window._sizeRows) window._sizeRows = {};
+  const v = String(valor).trim();
+  if(!window._sizeRows[tam]) window._sizeRows[tam] = { qtd:'', barcode:'' };
+  window._sizeRows[tam].qtd = (v==='') ? '' : String(Math.max(0, Number(v)||0));
+  syncSizesField();
+}
+
+function adicionarTamanhoExtra(){
+  const inp = document.getElementById('f_novo_tam');
+  const t = (inp.value||'').trim().toUpperCase();
+  if(!t){ toast('Digite o tamanho que quer acrescentar.'); return; }
+  if(!window._sizeRows) window._sizeRows = {};
+  if(!window._sizeRows[t]) window._sizeRows[t] = { qtd:'0', barcode:'' };
+  inp.value = '';
+  renderSizeArea();
+  syncSizesField();
+}
+
+function removerTamanhoExtra(tam){
+  if(window._sizeRows && window._sizeRows[tam]) delete window._sizeRows[tam];
+  renderSizeArea();
+  syncSizesField();
+}
+
+// Escreve no #f_sizes o mesmo formato de sempre ("P:5:código, M:3"), que é o
+// que saveProduct lê. Só entram os tamanhos com quantidade preenchida.
+function syncSizesField(){
+  const campo = document.getElementById('f_sizes');
+  if(!campo) return;
+  const partes = [];
+  if(window._sizeMode==='unico'){
+    const primeira = (window._colorRows||[])[0];
+    const bruto = primeira ? String(primeira.qtd).trim() : '';
+    const q = bruto==='' ? '0' : String(Math.max(0, Number(bruto)||0));
+    const bc = (window._sizeRows && window._sizeRows['U']) ? window._sizeRows['U'].barcode : '';
+    partes.push('U:'+q+(bc?':'+bc:''));
+  } else {
+    Object.keys(window._sizeRows||{}).forEach(function(t){
+      const r = window._sizeRows[t];
+      if(!r || String(r.qtd).trim()==='') return;
+      partes.push(t+':'+r.qtd+(r.barcode?':'+r.barcode:''));
+    });
+  }
+  campo.value = partes.join(', ');
+}
+
+/* ---------- Cores e quantidades (tamanho único, cadastro novo) ---------- */
+function renderColorRows(){
+  const area = document.getElementById('f_cores_area');
+  if(!area) return;
+  let h = '<div class="section-title" style="margin-top:4px;">Cores e quantidades</div>';
+  h += '<div class="page-desc">Cada cor vira um produto próprio, com seu estoque e seu código de barras — é isso que permite baixar a peça certa quando alguém bipa. Elas aparecem agrupadas como um modelo só no Estoque e no catálogo.</div>';
+  (window._colorRows||[]).forEach(function(c, i){
+    h += '<div class="cor-row">';
+    h += '<input placeholder="Cor (ex: Vinho)" value="'+escapeHtml(c.cor)+'" oninput="setCorCampo('+i+',&quot;cor&quot;,this.value)">';
+    h += '<input type="color" value="'+escapeHtml(c.hex||'#ffffff')+'" title="Amostra da cor" oninput="setCorCampo('+i+',&quot;hex&quot;,this.value)" style="height:36px;padding:2px;border:1px solid var(--border);border-radius:8px;cursor:pointer;">';
+    h += '<input type="number" min="0" step="1" placeholder="Qtd" value="'+escapeHtml(c.qtd)+'" oninput="setCorCampo('+i+',&quot;qtd&quot;,this.value)">';
+    h += (i>0 ? '<button type="button" class="btn small danger" title="Tirar esta cor" onclick="removerCorRow('+i+')">×</button>' : '<span></span>');
+    h += '</div>';
+  });
+  h += '<button type="button" class="btn small outline" onclick="adicionarCorRow()">+ Adicionar cor</button>';
+  area.innerHTML = h;
+}
+function setCorCampo(i, campo, valor){
+  if(!window._colorRows || !window._colorRows[i]) return;
+  window._colorRows[i][campo] = valor;
+  if(i===0 && campo==='qtd') syncSizesField();
+}
+function adicionarCorRow(){
+  if(!window._colorRows) window._colorRows = [];
+  window._colorRows.push({ cor:'', hex:'#ffffff', qtd:'' });
+  renderColorRows();
+}
+function removerCorRow(i){
+  if(!window._colorRows) return;
+  window._colorRows.splice(i,1);
+  renderColorRows();
+  syncSizesField();
+}
+
+// Cada cor precisa de SKU próprio: o código de barras é SKU-TAMANHO, e dois
+// produtos com o mesmo código fazem o leitor resolver sempre pro primeiro.
+function skuDaCor(base, cor, i){
+  const sufixo = (cor||'').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,10) || ('COR'+(i+1));
+  const raiz = (base||'').trim();
+  return raiz ? (raiz+'-'+sufixo) : ('JJ'+Date.now().toString(36).toUpperCase()+(i+1)+'-'+sufixo);
+}
+
 // Decide em qual grupo de modelo o produto entra ao salvar. Escolher um "irmão"
 // copia o grupo dele (é assim que a segunda cor se junta à primeira). "Modelo
 // próprio" mantém o grupo atual quando ninguém mais o usa, e cria um novo quando o
@@ -2195,6 +2375,18 @@ async function saveProduct(id){
       installments_interest_rate: Number(document.getElementById('f_inst_rate').value)||0,
       model_group: resolveModelGroup(id)
     };
+    // Tamanho único com lista de cores: a primeira linha é este produto. Quando há mais
+    // de uma cor, todas ganham sufixo no SKU — o código de barras é SKU-TAMANHO, e sem
+    // sufixo as cores nasceriam com o mesmo código, fazendo o leitor baixar sempre a
+    // mesma peça.
+    const coresExtras = (!id && window._sizeMode==='unico')
+      ? (window._colorRows||[]).filter(function(c){ return String(c.cor||'').trim(); })
+      : [];
+    if(coresExtras.length){
+      payload.color = coresExtras[0].cor.trim();
+      payload.color_hex = coresExtras[0].hex || '#ffffff';
+      if(coresExtras.length > 1){ payload.sku = skuDaCor(document.getElementById('f_sku').value, coresExtras[0].cor, 0); }
+    }
     let productId = id;
     if(id){
       await q(SUPA.from('products').update(payload).eq('id', id));
@@ -2258,6 +2450,28 @@ async function saveProduct(id){
     }
     window._currentProductMedia = [];
     window._croppedPhotoBlob = null;
+    // Cada cor extra vira um produto próprio, clonado deste, no mesmo model_group —
+    // é o que o Estoque e o catálogo agrupam depois num cartão só.
+    if(coresExtras.length > 1){
+      const skuBase = document.getElementById('f_sku').value;
+      for(let i = 1; i < coresExtras.length; i++){
+        const c = coresExtras[i];
+        const skuCor = skuDaCor(skuBase, c.cor, i);
+        const clone = Object.assign({}, payload, {
+          sku: skuCor,
+          color: c.cor.trim(),
+          color_hex: c.hex || '#ffffff',
+          image_url: null
+        });
+        const novo = await q(SUPA.from('products').insert([clone]).select());
+        await q(SUPA.from('product_sizes').insert([{
+          product_id: novo[0].id, size: 'U',
+          stock: Math.max(0, Number(c.qtd)||0),
+          barcode: generateBarcode(skuCor, 'U')
+        }]));
+      }
+      toast(coresExtras.length + ' cores cadastradas como um modelo só.');
+    }
     const isNewProduct = !id;
     closeModal();
     await renderEstoque();
@@ -5030,6 +5244,11 @@ const CATALOG_CSS = [
 '.pvariants{display:flex;flex-wrap:wrap;gap:4px;margin:3px 0 0;}',
 '.pvariant{display:flex;align-items:center;gap:3px;font-size:9.5px;color:#6b5849;background:#fff;border:1px solid #e6dcd2;border-radius:999px;padding:2px 7px;cursor:pointer;line-height:1.35;font-family:inherit;}',
 '.pvariant.sel{border-color:#7a2e3a;color:#7a2e3a;font-weight:700;}',
+'.lightbox{position:fixed;inset:0;background:rgba(0,0,0,0.93);z-index:9999;display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:none;}',
+'.lightbox img{max-width:100%;max-height:100%;transition:transform .2s ease;cursor:zoom-in;user-select:none;-webkit-user-drag:none;}',
+'.lightbox img.zoomed{cursor:zoom-out;transition:none;}',
+'.lightbox-close{position:absolute;top:14px;right:16px;width:40px;height:40px;border-radius:50%;border:none;background:rgba(255,255,255,0.92);color:#3b2a2f;font-size:22px;line-height:1;cursor:pointer;z-index:2;font-family:inherit;}',
+'.lightbox-hint{position:absolute;bottom:20px;left:0;right:0;text-align:center;color:rgba(255,255,255,0.72);font-size:11.5px;pointer-events:none;}',
 '.pprice{font-weight:700;color:#6b1f33;font-size:13.5px;margin-top:1px;}',
 '.psizes{display:flex;flex-wrap:wrap;gap:4px;margin:1px 0;}',
 '.psizes button{border:1.5px solid #f0dfe3;background:#fff;border-radius:6px;padding:2px 7px;font-size:10.5px;cursor:pointer;font-weight:600;color:#4a1523;}',
@@ -5774,6 +5993,63 @@ const CATALOG_JS = [
 '  document.body.appendChild(buildBottomTabBar());',
 '  buildCartUI();',
 '}',
+'// Abre a foto em tela cheia. Um toque amplia no ponto tocado (a origem do zoom vai',
+'// pro lugar clicado, entao a cliente aproxima exatamente o detalhe que quis ver:',
+'// textura do tecido, costura, estampa). Arrastando com o zoom ligado, passeia pela',
+'// foto. Fecha no X, no fundo preto ou no Esc.',
+'function openLightbox(src, alt){',
+'  if(!src) return;',
+'  var ov = document.createElement("div"); ov.className = "lightbox";',
+'  var img = document.createElement("img"); img.src = src; img.alt = alt || "";',
+'  var bt = document.createElement("button"); bt.type = "button"; bt.className = "lightbox-close"; bt.innerHTML = "&times;"; bt.title = "Fechar";',
+'  var dica = document.createElement("div"); dica.className = "lightbox-hint"; dica.textContent = "Toque na foto para ampliar";',
+'  var zoom = false, ox = 50, oy = 50, arrastando = false, xIni = 0, yIni = 0, oxIni = 50, oyIni = 50, moveu = false;',
+'  function aplicar(){',
+'    img.style.transformOrigin = ox + "% " + oy + "%";',
+'    img.style.transform = "scale(" + (zoom ? 2.6 : 1) + ")";',
+'    img.classList.toggle("zoomed", zoom);',
+'    dica.textContent = zoom ? "Arraste para mover · toque para voltar" : "Toque na foto para ampliar";',
+'  }',
+'  function pos(e){ var t = (e.touches && e.touches[0]) || e; return { x: t.clientX, y: t.clientY }; }',
+'  function origemDoToque(e){',
+'    var r = img.getBoundingClientRect(), q = pos(e);',
+'    ox = Math.min(100, Math.max(0, ((q.x - r.left) / r.width) * 100));',
+'    oy = Math.min(100, Math.max(0, ((q.y - r.top) / r.height) * 100));',
+'  }',
+'  function iniciar(e){',
+'    if(!zoom) return;',
+'    arrastando = true; moveu = false;',
+'    var q = pos(e); xIni = q.x; yIni = q.y; oxIni = ox; oyIni = oy;',
+'  }',
+'  function mover(e){',
+'    if(!arrastando) return;',
+'    e.preventDefault();',
+'    var q = pos(e), r = img.getBoundingClientRect();',
+'    if(Math.abs(q.x - xIni) > 3 || Math.abs(q.y - yIni) > 3) moveu = true;',
+'    ox = Math.min(100, Math.max(0, oxIni - ((q.x - xIni) / r.width) * 100));',
+'    oy = Math.min(100, Math.max(0, oyIni - ((q.y - yIni) / r.height) * 100));',
+'    aplicar();',
+'  }',
+'  function soltar(){ arrastando = false; }',
+'  img.onclick = function(e){',
+'    e.stopPropagation();',
+'    if(moveu){ moveu = false; return; }',
+'    if(!zoom) origemDoToque(e);',
+'    zoom = !zoom;',
+'    aplicar();',
+'  };',
+'  img.addEventListener("mousedown", iniciar); img.addEventListener("touchstart", iniciar, {passive:true});',
+'  ov.addEventListener("mousemove", mover); ov.addEventListener("touchmove", mover, {passive:false});',
+'  ov.addEventListener("mouseup", soltar); ov.addEventListener("touchend", soltar);',
+'  function fechar(){ if(ov.parentNode) ov.parentNode.removeChild(ov); document.removeEventListener("keydown", aoTeclar); }',
+'  function aoTeclar(e){ if(e.key === "Escape") fechar(); }',
+'  bt.onclick = function(e){ e.stopPropagation(); fechar(); };',
+'  ov.onclick = function(){ fechar(); };',
+'  document.addEventListener("keydown", aoTeclar);',
+'  ov.appendChild(img); ov.appendChild(bt); ov.appendChild(dica);',
+'  document.body.appendChild(ov);',
+'  aplicar();',
+'}',
 '// Junta num cartao so as cores do mesmo modelo (products.model_group), preservando',
 '// a ordem em que apareceram na lista ja filtrada/ordenada. Como o agrupamento roda',
 '// DEPOIS do filtro, filtrar por \"Azul\" deixa no grupo so a variante azul.',
@@ -5790,7 +6066,8 @@ const CATALOG_JS = [
 '  var card = document.createElement("div"); card.className="pcard";',
 '  var img = document.createElement("div"); img.className="pimg";',
 '  var mainImgEl = null;',
-'  if(p.image_url){ mainImgEl = document.createElement("img"); mainImgEl.src = p.image_url; mainImgEl.alt = p.name; img.appendChild(mainImgEl); }',
+'  function ligarZoom(elImg){ elImg.style.cursor = "zoom-in"; elImg.onclick = function(e){ e.stopPropagation(); openLightbox(elImg.src, p.name); }; }',
+'  if(p.image_url){ mainImgEl = document.createElement("img"); mainImgEl.src = p.image_url; mainImgEl.alt = p.name; ligarZoom(mainImgEl); img.appendChild(mainImgEl); }',
 '  else { img.textContent = p.name; }',
 '  var isNew = p.created_at && (Date.now() - new Date(p.created_at).getTime()) < 14*24*60*60*1000;',
 '  if(isNew){ var newBadge = document.createElement("span"); newBadge.className="badge-new"; newBadge.textContent="NOVO"; img.appendChild(newBadge); }',
@@ -5819,7 +6096,7 @@ const CATALOG_JS = [
 '        gal.appendChild(vt);',
 '      } else {',
 '        var th = document.createElement("img"); th.src = mm.url;',
-'        th.onclick = function(){ if(mainImgEl){ mainImgEl.src = mm.url; } else { mainImgEl=document.createElement("img"); mainImgEl.src=mm.url; img.innerHTML=""; img.appendChild(mainImgEl); } Array.prototype.forEach.call(gal.children, function(t){t.classList.remove("active");}); th.classList.add("active"); };',
+'        th.onclick = function(){ if(mainImgEl){ mainImgEl.src = mm.url; } else { mainImgEl=document.createElement("img"); mainImgEl.src=mm.url; ligarZoom(mainImgEl); img.innerHTML=""; img.appendChild(mainImgEl); } Array.prototype.forEach.call(gal.children, function(t){t.classList.remove("active");}); th.classList.add("active"); };',
 '        gal.appendChild(th);',
 '      }',
 '    });',

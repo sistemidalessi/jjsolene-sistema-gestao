@@ -37,6 +37,11 @@ h1,h2,h3{font-family:"Playfair Display",serif;margin:0;}
 .pvariants{display:flex;flex-wrap:wrap;gap:4px;margin:3px 0 0;}
 .pvariant{display:flex;align-items:center;gap:3px;font-size:9.5px;color:#6b5849;background:#fff;border:1px solid #e6dcd2;border-radius:999px;padding:2px 7px;cursor:pointer;line-height:1.35;font-family:inherit;}
 .pvariant.sel{border-color:#7a2e3a;color:#7a2e3a;font-weight:700;}
+.lightbox{position:fixed;inset:0;background:rgba(0,0,0,0.93);z-index:9999;display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:none;}
+.lightbox img{max-width:100%;max-height:100%;transition:transform .2s ease;cursor:zoom-in;user-select:none;-webkit-user-drag:none;}
+.lightbox img.zoomed{cursor:zoom-out;transition:none;}
+.lightbox-close{position:absolute;top:14px;right:16px;width:40px;height:40px;border-radius:50%;border:none;background:rgba(255,255,255,0.92);color:#3b2a2f;font-size:22px;line-height:1;cursor:pointer;z-index:2;font-family:inherit;}
+.lightbox-hint{position:absolute;bottom:20px;left:0;right:0;text-align:center;color:rgba(255,255,255,0.72);font-size:11.5px;pointer-events:none;}
 .pprice{font-weight:700;color:#6b1f33;font-size:13.5px;margin-top:1px;}
 .psizes{display:flex;flex-wrap:wrap;gap:4px;margin:1px 0;}
 .psizes button{border:1.5px solid #f0dfe3;background:#fff;border-radius:6px;padding:2px 7px;font-size:10.5px;cursor:pointer;font-weight:600;color:#4a1523;}
@@ -785,6 +790,63 @@ function buildApp(){
   document.body.appendChild(buildBottomTabBar());
   buildCartUI();
 }
+// Abre a foto em tela cheia. Um toque amplia no ponto tocado (a origem do zoom vai
+// pro lugar clicado, entao a cliente aproxima exatamente o detalhe que quis ver:
+// textura do tecido, costura, estampa). Arrastando com o zoom ligado, passeia pela
+// foto. Fecha no X, no fundo preto ou no Esc.
+function openLightbox(src, alt){
+  if(!src) return;
+  var ov = document.createElement("div"); ov.className = "lightbox";
+  var img = document.createElement("img"); img.src = src; img.alt = alt || "";
+  var bt = document.createElement("button"); bt.type = "button"; bt.className = "lightbox-close"; bt.innerHTML = "&times;"; bt.title = "Fechar";
+  var dica = document.createElement("div"); dica.className = "lightbox-hint"; dica.textContent = "Toque na foto para ampliar";
+  var zoom = false, ox = 50, oy = 50, arrastando = false, xIni = 0, yIni = 0, oxIni = 50, oyIni = 50, moveu = false;
+  function aplicar(){
+    img.style.transformOrigin = ox + "% " + oy + "%";
+    img.style.transform = "scale(" + (zoom ? 2.6 : 1) + ")";
+    img.classList.toggle("zoomed", zoom);
+    dica.textContent = zoom ? "Arraste para mover · toque para voltar" : "Toque na foto para ampliar";
+  }
+  function pos(e){ var t = (e.touches && e.touches[0]) || e; return { x: t.clientX, y: t.clientY }; }
+  function origemDoToque(e){
+    var r = img.getBoundingClientRect(), q = pos(e);
+    ox = Math.min(100, Math.max(0, ((q.x - r.left) / r.width) * 100));
+    oy = Math.min(100, Math.max(0, ((q.y - r.top) / r.height) * 100));
+  }
+  function iniciar(e){
+    if(!zoom) return;
+    arrastando = true; moveu = false;
+    var q = pos(e); xIni = q.x; yIni = q.y; oxIni = ox; oyIni = oy;
+  }
+  function mover(e){
+    if(!arrastando) return;
+    e.preventDefault();
+    var q = pos(e), r = img.getBoundingClientRect();
+    if(Math.abs(q.x - xIni) > 3 || Math.abs(q.y - yIni) > 3) moveu = true;
+    ox = Math.min(100, Math.max(0, oxIni - ((q.x - xIni) / r.width) * 100));
+    oy = Math.min(100, Math.max(0, oyIni - ((q.y - yIni) / r.height) * 100));
+    aplicar();
+  }
+  function soltar(){ arrastando = false; }
+  img.onclick = function(e){
+    e.stopPropagation();
+    if(moveu){ moveu = false; return; }
+    if(!zoom) origemDoToque(e);
+    zoom = !zoom;
+    aplicar();
+  };
+  img.addEventListener("mousedown", iniciar); img.addEventListener("touchstart", iniciar, {passive:true});
+  ov.addEventListener("mousemove", mover); ov.addEventListener("touchmove", mover, {passive:false});
+  ov.addEventListener("mouseup", soltar); ov.addEventListener("touchend", soltar);
+  function fechar(){ if(ov.parentNode) ov.parentNode.removeChild(ov); document.removeEventListener("keydown", aoTeclar); }
+  function aoTeclar(e){ if(e.key === "Escape") fechar(); }
+  bt.onclick = function(e){ e.stopPropagation(); fechar(); };
+  ov.onclick = function(){ fechar(); };
+  document.addEventListener("keydown", aoTeclar);
+  ov.appendChild(img); ov.appendChild(bt); ov.appendChild(dica);
+  document.body.appendChild(ov);
+  aplicar();
+}
 // Junta num cartao so as cores do mesmo modelo (products.model_group), preservando
 // a ordem em que apareceram na lista ja filtrada/ordenada. Como o agrupamento roda
 // DEPOIS do filtro, filtrar por "Azul" deixa no grupo so a variante azul.
@@ -801,7 +863,8 @@ function buildCard(p, variantes){
   var card = document.createElement("div"); card.className="pcard";
   var img = document.createElement("div"); img.className="pimg";
   var mainImgEl = null;
-  if(p.image_url){ mainImgEl = document.createElement("img"); mainImgEl.src = p.image_url; mainImgEl.alt = p.name; img.appendChild(mainImgEl); }
+  function ligarZoom(elImg){ elImg.style.cursor = "zoom-in"; elImg.onclick = function(e){ e.stopPropagation(); openLightbox(elImg.src, p.name); }; }
+  if(p.image_url){ mainImgEl = document.createElement("img"); mainImgEl.src = p.image_url; mainImgEl.alt = p.name; ligarZoom(mainImgEl); img.appendChild(mainImgEl); }
   else { img.textContent = p.name; }
   var isNew = p.created_at && (Date.now() - new Date(p.created_at).getTime()) < 14*24*60*60*1000;
   if(isNew){ var newBadge = document.createElement("span"); newBadge.className="badge-new"; newBadge.textContent="NOVO"; img.appendChild(newBadge); }
@@ -830,7 +893,7 @@ function buildCard(p, variantes){
         gal.appendChild(vt);
       } else {
         var th = document.createElement("img"); th.src = mm.url;
-        th.onclick = function(){ if(mainImgEl){ mainImgEl.src = mm.url; } else { mainImgEl=document.createElement("img"); mainImgEl.src=mm.url; img.innerHTML=""; img.appendChild(mainImgEl); } Array.prototype.forEach.call(gal.children, function(t){t.classList.remove("active");}); th.classList.add("active"); };
+        th.onclick = function(){ if(mainImgEl){ mainImgEl.src = mm.url; } else { mainImgEl=document.createElement("img"); mainImgEl.src=mm.url; ligarZoom(mainImgEl); img.innerHTML=""; img.appendChild(mainImgEl); } Array.prototype.forEach.call(gal.children, function(t){t.classList.remove("active");}); th.classList.add("active"); };
         gal.appendChild(th);
       }
     });

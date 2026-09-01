@@ -2143,7 +2143,7 @@ function sizeEditorHtml(p, ehNovo){
   h += '<button type="button" class="btn small" id="f_mode_grade" onclick="setSizeMode(&quot;grade&quot;)">Grade de tamanhos</button>';
   h += '<button type="button" class="btn small outline" id="f_mode_unico" onclick="setSizeMode(&quot;unico&quot;)">Tamanho único</button>';
   h += '</div><div id="f_sizes_area"></div><input type="hidden" id="f_sizes" value=""></div>';
-  if(ehNovo) h += '<div id="f_cores_area" class="hidden"></div>';
+  h += '<div id="f_cores_area" class="hidden"></div>';
   return h;
 }
 
@@ -2170,7 +2170,7 @@ function setSizeMode(modo){
   // No modo tamanho único quem manda é a lista de cores; deixar os dois na tela
   // deixaria dúvida sobre qual vale.
   const campoCor = document.getElementById('f_color_wrap');
-  if(campoCor) campoCor.classList.toggle('hidden', modo==='unico' && !!window._ehProdutoNovo);
+  if(campoCor) campoCor.classList.toggle('hidden', modo==='unico');
   renderSizeArea();
   if(modo==='unico') renderColorRows();
   syncSizesField();
@@ -2255,7 +2255,10 @@ function renderColorRows(){
   const area = document.getElementById('f_cores_area');
   if(!area) return;
   let h = '<div class="section-title" style="margin-top:4px;">Cores e quantidades</div>';
-  h += '<div class="page-desc">Cada cor vira um produto próprio, com seu estoque e seu código de barras — é isso que permite baixar a peça certa quando alguém bipa. Elas aparecem agrupadas como um modelo só no Estoque e no catálogo.</div>';
+  const editando = !window._ehProdutoNovo;
+  h += '<div class="page-desc">Cada cor vira um produto próprio, com seu estoque e seu código de barras — é isso que permite baixar a peça certa quando alguém bipa. Elas aparecem agrupadas como um modelo só no Estoque e no catálogo.'
+    + (editando ? ' <strong>A primeira linha é esta peça</strong>; as que você acrescentar abaixo serão cadastradas como cores novas do mesmo modelo.' : '')
+    + '</div>';
   (window._colorRows||[]).forEach(function(c, i){
     h += '<div class="cor-row">';
     h += '<input placeholder="Cor (ex: Vinho)" value="'+escapeHtml(c.cor)+'" oninput="setCorCampo('+i+',&quot;cor&quot;,this.value)">';
@@ -2286,6 +2289,13 @@ function removerCorRow(i){
 
 // Cada cor precisa de SKU próprio: o código de barras é SKU-TAMANHO, e dois
 // produtos com o mesmo código fazem o leitor resolver sempre pro primeiro.
+// Tira do SKU o sufixo da cor atual, pra que acrescentar cor num produto que já é
+// "VD10-MARSALA" gere "VD10-PRETO", e não "VD10-MARSALA-PRETO".
+function raizDoSku(sku, corAtual){
+  const base = String(sku||'').trim();
+  const suf = '-' + String(corAtual||'').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,10);
+  return (suf.length > 1 && base.toUpperCase().endsWith(suf)) ? base.slice(0, base.length - suf.length) : base;
+}
 function skuDaCor(base, cor, i){
   const sufixo = (cor||'').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,10) || ('COR'+(i+1));
   const raiz = (base||'').trim();
@@ -2379,13 +2389,16 @@ async function saveProduct(id){
     // de uma cor, todas ganham sufixo no SKU — o código de barras é SKU-TAMANHO, e sem
     // sufixo as cores nasceriam com o mesmo código, fazendo o leitor baixar sempre a
     // mesma peça.
-    const coresExtras = (!id && window._sizeMode==='unico')
+    const coresExtras = (window._sizeMode==='unico')
       ? (window._colorRows||[]).filter(function(c){ return String(c.cor||'').trim(); })
       : [];
     if(coresExtras.length){
       payload.color = coresExtras[0].cor.trim();
       payload.color_hex = coresExtras[0].hex || '#ffffff';
-      if(coresExtras.length > 1){ payload.sku = skuDaCor(document.getElementById('f_sku').value, coresExtras[0].cor, 0); }
+      // Renomear o SKU só no cadastro novo. Num produto que já existe, mexer no SKU
+      // mudaria a identidade de uma peça que talvez já tenha etiqueta impressa e
+      // colada; as cores novas é que ganham sufixo próprio.
+      if(!id && coresExtras.length > 1){ payload.sku = skuDaCor(document.getElementById('f_sku').value, coresExtras[0].cor, 0); }
     }
     let productId = id;
     if(id){
@@ -2453,7 +2466,7 @@ async function saveProduct(id){
     // Cada cor extra vira um produto próprio, clonado deste, no mesmo model_group —
     // é o que o Estoque e o catálogo agrupam depois num cartão só.
     if(coresExtras.length > 1){
-      const skuBase = document.getElementById('f_sku').value;
+      const skuBase = raizDoSku(document.getElementById('f_sku').value, coresExtras[0].cor);
       for(let i = 1; i < coresExtras.length; i++){
         const c = coresExtras[i];
         const skuCor = skuDaCor(skuBase, c.cor, i);

@@ -1939,6 +1939,7 @@ async function openProductForm(id){
   html += '<input id="f_height" type="number" step="1" min="0" value="'+(p.height_cm||'')+'" placeholder="Altura (cm)">';
   html += '</div></div>';
   html += '<div class="field" style="margin-bottom:8px;"><label>Tamanhos, estoque e código de barras (formato: P:5:789..., M:3, G:2 — código de barras é opcional)</label><input id="f_sizes" value="'+escapeHtml(sizesStr)+'"></div>';
+  html += '<div class="note" style="margin-top:-4px;margin-bottom:8px;">Tirar um tamanho da lista só remove ele de verdade se o estoque já estiver zerado (ex: apague o "M:3" só depois de zerar pra "M:0" e salvar) — assim nenhuma peça reservada em uma sacolinha ou pedido some do sistema sem querer.</div>';
   html += '<div class="section-title" style="margin-top:10px;">Desconto por quantidade (opcional)</div>';
   html += '<div class="form-row">';
   html += '<div class="field"><label>Tipo</label><select id="f_disc_type"><option value="none"'+(p.discount_type==='none'?' selected':'')+'>Sem desconto</option><option value="percent"'+(p.discount_type==='percent'?' selected':'')+'>Percentual (%)</option><option value="fixed"'+(p.discount_type==='fixed'?' selected':'')+'>Valor fixo por peça (R$)</option></select></div>';
@@ -2200,6 +2201,24 @@ async function saveProduct(id){
     } else {
       const inserted = await q(SUPA.from('products').insert([payload]).select());
       productId = inserted[0].id;
+    }
+    if(id){
+      // O campo de tamanhos só sabe adicionar/atualizar (upsert) — tirar um tamanho da string
+      // nunca apagava a linha antiga em product_sizes, ela ficava "presa" com o estoque de
+      // antes. Aqui a gente de fato remove o que saiu da lista, mas só quando é seguro: com
+      // estoque e reserva zerados. Um tamanho com peça ainda reservada (sacolinha, pedido
+      // pendente) fica de propósito, senão a reserva desaparece sem ninguém perceber.
+      const existingSizes = await q(SUPA.from('product_sizes').select('id,size,stock,reserved').eq('product_id', id));
+      const newSizeNames = new Set(sizes.map(s=>s.size));
+      const removed = existingSizes.filter(es=> !newSizeNames.has(es.size));
+      const removable = removed.filter(es=> (Number(es.stock)||0)===0 && (Number(es.reserved)||0)===0);
+      const blocked = removed.filter(es=> !((Number(es.stock)||0)===0 && (Number(es.reserved)||0)===0));
+      if(removable.length){
+        await q(SUPA.from('product_sizes').delete().in('id', removable.map(r=>r.id)));
+      }
+      if(blocked.length){
+        toast('O tamanho '+blocked.map(b=>b.size).join(', ')+' não foi removido porque ainda tem estoque ou peça reservada — zere a quantidade dele (ex: "'+blocked[0].size+':0") e salve de novo antes de tirá-lo da lista.');
+      }
     }
     if(sizes.length){
       await q(SUPA.from('product_sizes').upsert(

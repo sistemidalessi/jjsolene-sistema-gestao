@@ -2287,52 +2287,73 @@ async function viewProductBarcodes(id){
 }
 async function deleteProduct(id){
   if(!confirm('Excluir este produto do estoque? Essa ação não pode ser desfeita.')) return;
-  // Galeria de fotos/vídeo, lista de espera ("avise-me") e linhas de contagem de inventário
-  // não têm nada de histórico fiscal/financeiro pra preservar — ao contrário de vendas e
-  // pedidos, dá pra limpar direto, sem perguntar. Sem isso, um produto com só uma foto extra
-  // na galeria (ou que já apareceu numa contagem Total) travava a exclusão, e a mensagem de
-  // "tem vendas/pedidos" que aparecia lá embaixo nem era o motivo de verdade do erro.
+  // Levanta tudo que prende o produto ANTES de apagar qualquer coisa. Essa ordem é o ponto
+  // importante: a limpeza de galeria, lista de espera e linhas de inventário é irreversível
+  // e ficava logo na entrada da função — quem tentasse excluir um produto com histórico e
+  // desistisse no aviso seguinte perdia as fotos extras do mesmo jeito, com o produto
+  // continuando lá. Agora nada é apagado enquanto a exclusão não estiver decidida.
+  const [linkedSales, linkedOrderItems, linkedBagItems, linkedPurchaseItems, linkedGiftRules] = await Promise.all([
+    q(SUPA.from('sale_items').select('sale_id, sales(invoice_id)').eq('product_id', id)),
+    q(SUPA.from('order_items').select('id, order_id').eq('product_id', id)),
+    q(SUPA.from('bag_delivery_items').select('id').eq('product_id', id)),
+    q(SUPA.from('purchase_items').select('id').eq('product_id', id)),
+    q(SUPA.from('gift_rules').select('id').eq('gift_product_id', id))
+  ]);
+  async function ocultarEmVezDeExcluir(pergunta){
+    if(!confirm(pergunta)) return;
+    await q(SUPA.from('products').update({ show_in_catalog:false }).eq('id', id));
+    await renderEstoque();
+    toast('Produto ocultado do catálogo.');
+  }
+
+  if(linkedSales.some(function(it){ return it.sales && it.sales.invoice_id; })){
+    await ocultarEmVezDeExcluir('Esse produto tem venda com nota fiscal emitida e não pode ser excluído (isso apagaria o registro fiscal). Quer ocultar ele do catálogo em vez de excluir? Ele some da loja, mas o histórico continua intacto.');
+    return;
+  }
+  // Brinde é configuração, não histórico: dá pra desfazer em Marketing e excluir depois.
+  if(linkedGiftRules.length){
+    toast('Esse produto é o brinde de uma regra ativa. Remova a regra em Marketing → Brindes e tente excluir de novo.');
+    return;
+  }
+  // Compra registrada amarra fornecedor, custo e lançamento no Financeiro — não é "dado de
+  // teste" como um pedido de catálogo. Antes isso caía num erro de chave estrangeira sem
+  // explicação; agora avisa e oferece o mesmo caminho da nota fiscal.
+  if(linkedPurchaseItems.length){
+    await ocultarEmVezDeExcluir('Esse produto aparece em compras já registradas, e excluí-lo apagaria esse histórico de compra. Quer ocultar ele do catálogo em vez de excluir? Ele some da loja, mas o histórico continua intacto.');
+    return;
+  }
+
+  const temHistorico = linkedSales.length>0 || linkedOrderItems.length>0 || linkedBagItems.length>0;
+  if(temHistorico && !confirm('Esse produto tem vendas, pedidos ou sacolinhas no histórico, mas nenhum com nota fiscal emitida. Quer excluir mesmo assim? Isso remove também os itens vinculados a ele, e qualquer venda/pedido que fique vazio por causa disso.')) return;
+
+  // Daqui pra frente a exclusão está decidida.
   await q(SUPA.from('product_media').delete().eq('product_id', id));
   await q(SUPA.from('waitlist').delete().eq('product_id', id));
   await q(SUPA.from('inventory_session_items').delete().eq('product_id', id));
+
+  if(temHistorico){
+    const affectedSaleIds = [...new Set(linkedSales.map(function(it){ return it.sale_id; }))];
+    const affectedOrderIds = [...new Set(linkedOrderItems.map(function(it){ return it.order_id; }))];
+    await q(SUPA.from('sale_items').delete().eq('product_id', id));
+    await q(SUPA.from('order_items').delete().eq('product_id', id));
+    await q(SUPA.from('bag_delivery_items').delete().eq('product_id', id));
+    for(const saleId of affectedSaleIds){
+      const remaining = await q(SUPA.from('sale_items').select('id').eq('sale_id', saleId));
+      if(remaining.length===0){ await q(SUPA.from('sales').delete().eq('id', saleId)); }
+    }
+    for(const orderId of affectedOrderIds){
+      const remaining = await q(SUPA.from('order_items').select('id').eq('order_id', orderId));
+      if(remaining.length===0){
+        const stillLinkedSales = await q(SUPA.from('sales').select('id,invoice_id').eq('order_id', orderId));
+        if(!stillLinkedSales.some(function(sv){ return sv.invoice_id; })){ await q(SUPA.from('orders').delete().eq('id', orderId)); }
+      }
+    }
+  }
+
   const { error } = await SUPA.from('products').delete().eq('id', id);
-  if(!error){ await renderEstoque(); toast('Produto excluído.'); return; }
-  if(error.code !== '23503'){ toast('Erro: '+error.message); return; }
-  const linkedSales = await q(SUPA.from('sale_items').select('sale_id, sales(invoice_id)').eq('product_id', id));
-  const hasInvoice = linkedSales.some(it=> it.sales && it.sales.invoice_id);
-  if(hasInvoice){
-    if(confirm('Esse produto tem venda com nota fiscal emitida e não pode ser excluído (isso apagaria o registro fiscal). Quer ocultar ele do catálogo em vez de excluir? Ele some da loja, mas o histórico continua intacto.')){
-      await q(SUPA.from('products').update({ show_in_catalog:false }).eq('id', id));
-      await renderEstoque();
-      toast('Produto ocultado do catálogo.');
-    }
-    return;
-  }
-  if(!confirm('Esse produto tem vendas/pedidos no histórico, mas nenhum com nota fiscal emitida. Quer excluir mesmo assim? Isso remove também os itens de venda/pedido de teste vinculados a ele, e qualquer venda/pedido que fique vazio por causa disso.')) return;
-  const affectedSaleIds = [...new Set(linkedSales.map(it=>it.sale_id))];
-  const linkedOrderItems = await q(SUPA.from('order_items').select('id, order_id').eq('product_id', id));
-  const affectedOrderIds = [...new Set(linkedOrderItems.map(it=>it.order_id))];
-
-  await q(SUPA.from('sale_items').delete().eq('product_id', id));
-  await q(SUPA.from('order_items').delete().eq('product_id', id));
-  await q(SUPA.from('bag_delivery_items').delete().eq('product_id', id));
-
-  for(const saleId of affectedSaleIds){
-    const remaining = await q(SUPA.from('sale_items').select('id').eq('sale_id', saleId));
-    if(remaining.length===0){ await q(SUPA.from('sales').delete().eq('id', saleId)); }
-  }
-  for(const orderId of affectedOrderIds){
-    const remaining = await q(SUPA.from('order_items').select('id').eq('order_id', orderId));
-    if(remaining.length===0){
-      const stillLinkedSales = await q(SUPA.from('sales').select('id,invoice_id').eq('order_id', orderId));
-      if(!stillLinkedSales.some(s=>s.invoice_id)){ await q(SUPA.from('orders').delete().eq('id', orderId)); }
-    }
-  }
-
-  const { error: err2 } = await SUPA.from('products').delete().eq('id', id);
-  if(err2){ toast('Ainda não foi possível excluir: '+err2.message); return; }
+  if(error){ toast('Ainda não foi possível excluir: '+error.message); return; }
   await renderEstoque();
-  toast('Produto excluído, junto com vendas/pedidos de teste vinculados que ficaram vazios.');
+  toast(temHistorico ? 'Produto excluído, junto com vendas/pedidos vinculados que ficaram vazios.' : 'Produto excluído.');
 }
 
 /* ============================================================

@@ -2238,8 +2238,14 @@ function syncSizesField(){
     const primeira = (window._colorRows||[])[0];
     const bruto = primeira ? String(primeira.qtd).trim() : '';
     const q = bruto==='' ? '0' : String(Math.max(0, Number(bruto)||0));
-    const bc = (window._sizeRows && window._sizeRows['U']) ? window._sizeRows['U'].barcode : '';
-    partes.push('U:'+q+(bc?':'+bc:''));
+    // Tamanho único nem sempre está gravado como "U": Compras, Vendas e Bag Delivery
+    // gravam "Único" quando o campo fica em branco. Reaproveitar a grafia que já existe
+    // (qualquer uma de rank 0) preserva o código de barras da peça — emitir sempre "U"
+    // criaria uma segunda linha com código novo e deixaria a antiga presa pela trava de
+    // remoção, ou seja, dois códigos pra mesma peça.
+    const chaveU = Object.keys(window._sizeRows||{}).find(function(k){ return sizeSortRank(k)===0; }) || 'U';
+    const bc = (window._sizeRows && window._sizeRows[chaveU]) ? window._sizeRows[chaveU].barcode : '';
+    partes.push(chaveU+':'+q+(bc?':'+bc:''));
   } else {
     Object.keys(window._sizeRows||{}).forEach(function(t){
       const r = window._sizeRows[t];
@@ -2422,7 +2428,14 @@ async function saveProduct(id){
         await q(SUPA.from('product_sizes').delete().in('id', removable.map(r=>r.id)));
       }
       if(blocked.length){
-        toast('O tamanho '+blocked.map(b=>b.size).join(', ')+' não foi removido porque ainda tem estoque ou peça reservada — zere a quantidade dele (ex: "'+blocked[0].size+':0") e salve de novo antes de tirá-lo da lista.');
+        // O motivo muda a instrução: com estoque, basta colocar 0 no quadradinho; com peça
+        // reservada, zerar não resolve — a sacolinha ou o pedido é que precisa ser fechado.
+        const comReserva = blocked.filter(b=> (Number(b.reserved)||0) > 0).map(b=>b.size);
+        const comEstoque = blocked.filter(b=> (Number(b.reserved)||0) === 0).map(b=>b.size);
+        const partes = [];
+        if(comEstoque.length) partes.push('o tamanho '+comEstoque.join(', ')+' ainda tem estoque — coloque 0 no quadradinho dele e salve; depois deixe em branco pra tirar de vez');
+        if(comReserva.length) partes.push('o tamanho '+comReserva.join(', ')+' tem peça reservada em sacolinha ou pedido — feche essa reserva antes de tirá-lo');
+        toast('Não removido: '+partes.join('; ')+'.');
       }
     }
     if(sizes.length){

@@ -7190,6 +7190,37 @@ async function importPhiboEstoque(text){
   const { data: allForn } = await SUPA.from('fornecedores').select('id,cnpj');
   const fornByCnpj = new Map((allForn||[]).filter(f=>f.cnpj).map(f=>[f.cnpj, f.id]));
 
+  // Reimportar um arquivo antigo trocava, sem avisar, o preço que alguém já tinha ajustado à
+  // mão no sistema. Então, antes de gravar qualquer coisa, compara o preço do arquivo com o
+  // de cada produto que já existe e pergunta uma vez só. "Cancelar" mantém os preços do
+  // sistema — o resto da importação (produtos novos, estoque, NCM, cor) segue normal.
+  let manterPrecos = false;
+  const existentePorSku = new Map();
+  const todosSkus = Array.from(groups.keys());
+  for(let i=0; i<todosSkus.length; i+=80){ // em lotes, pra lista de SKUs não estourar o tamanho da URL
+    const { data: lote, error: errLote } = await SUPA.from('products').select('sku,name,color,cost_price,sale_price').in('sku', todosSkus.slice(i, i+80));
+    if(errLote) throw errLote;
+    (lote||[]).forEach(function(p){ existentePorSku.set(p.sku, p); });
+  }
+  const precoDiferente = [];
+  for(const [sku, groupRows] of groups){
+    const atual = existentePorSku.get(sku);
+    if(!atual) continue;
+    const custoArq = round2(parseBRNumber(groupRows[0].r[4]));
+    const vendaArq = round2(parseBRNumber(groupRows[0].r[5]));
+    if(round2(Number(atual.sale_price)||0)!==vendaArq || round2(Number(atual.cost_price)||0)!==custoArq){
+      precoDiferente.push({ atual, custoArq, vendaArq });
+    }
+  }
+  if(precoDiferente.length){
+    const exemplos = precoDiferente.slice(0,8).map(function(d){
+      return '• '+d.atual.name+(d.atual.color ? ' ('+d.atual.color+')' : '')+': sistema '+fmtMoney(d.atual.sale_price)+' → arquivo '+fmtMoney(d.vendaArq);
+    }).join('\n');
+    const mais = precoDiferente.length>8 ? '\n• +'+(precoDiferente.length-8)+' outro(s)...' : '';
+    manterPrecos = !confirm(precoDiferente.length+' produto(s) que já existem estão com preço ou custo diferente no arquivo:\n\n'+exemplos+mais+'\n\nOK = trocar pelos valores do ARQUIVO.\nCancelar = manter os preços do SISTEMA (o resto da importação segue normal).');
+  }
+  result.pricesKept = 0;
+
   for(const [sku, groupRows] of groups){
     const first = groupRows[0].r;
     const rowNumsForGroup = groupRows.map(g=>g.rowNum).join(',');
@@ -7242,6 +7273,10 @@ async function importPhiboEstoque(text){
       let productId;
       if(existingP && existingP[0]){
         productId = existingP[0].id;
+        if(manterPrecos){
+          ['entry_value','cost_index','sale_index','cost_price','sale_price'].forEach(function(k){ delete payload[k]; });
+          if(precoDiferente.some(function(d){ return d.atual.sku===sku; })) result.pricesKept++;
+        }
         const { error } = await SUPA.from('products').update(payload).eq('id', productId);
         if(error) throw error;
         result.updated++;
@@ -7277,7 +7312,7 @@ async function importPhiboEstoque(text){
   return result;
 }
 function phiboResultHtml(result){
-  let html = '<strong>'+result.created+' criado(s), '+result.updated+' atualizado(s), '+result.skipped+' pulado(s)'+(result.noNcm?', '+result.noNcm+' sem NCM':'')+'.</strong>';
+  let html = '<strong>'+result.created+' criado(s), '+result.updated+' atualizado(s), '+result.skipped+' pulado(s)'+(result.noNcm?', '+result.noNcm+' sem NCM':'')+(result.pricesKept?', preço do sistema mantido em '+result.pricesKept:'')+'.</strong>';
   if(result.errors.length){
     html += '<div style="max-height:200px;overflow-y:auto;margin-top:6px;"><ul style="margin:4px 0 0;padding-left:18px;">';
     result.errors.slice(0,30).forEach(function(e){

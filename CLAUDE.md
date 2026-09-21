@@ -13,7 +13,20 @@ embedded public-catalog template, not admin code). There is no build system, pac
 or bundler for the app itself, and no test suite in this repo; the one piece with its own deploy
 step is the small set of Supabase Edge Functions described under Architecture below.
 
-The app loads four CDN scripts: `@supabase/supabase-js@2`, `JsBarcode` (barcode rendering for
+**Every CDN library is pinned to an exact version with `integrity` (SRI) and `crossorigin`** (since
+2026-09-21, audit finding `jjs-08`) — in the admin `<head>` and in the catalog template inside
+`buildCatalogHTML`. Without SRI, a package tampered with upstream would run inside the logged-in
+admin session; with it the browser refuses the file if a single byte differs (verified both ways:
+right hash loads, another file's hash is blocked). Point at the package's **original file**
+(immutable for that version), never at jsDelivr's on-the-fly `.min.js` or a floating `@2`. To bump
+a library: change the version in the URL, recompute the hash
+(`curl -s URL | openssl dgst -sha384 -binary | openssl base64 -A`), check it against the hash the
+registry declares (`https://data.jsdelivr.com/v1/packages/npm/<pkg>@<ver>?structure=flat`), and load
+both the admin and the catalog — **a wrong hash means the library silently doesn't load and the app
+won't open.** Not covered, by nature: Google's GSI client and Google Fonts (served dynamically), and
+the `onnxruntime-web` dynamic import (pinned to an exact version, but it pulls its own wasm).
+
+The app loads four CDN scripts: `@supabase/supabase-js` (2.116.0), `JsBarcode` (barcode rendering for
 product labels), `cropperjs` (4:5 crop on the main product photo), and Google's GSI client (one-way
 Agenda → Google Calendar sync).
 

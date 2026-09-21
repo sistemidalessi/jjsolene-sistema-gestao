@@ -13,7 +13,13 @@
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css">
+<!-- SEGURANCA (21/09/2026, achado jjs-08): toda biblioteca de CDN vem com VERSAO EXATA + integrity (SRI) + crossorigin.
+     Sem isso, um pacote adulterado na origem rodaria dentro da sessao logada do admin. Com SRI o navegador RECUSA o
+     arquivo se um byte mudar. Apontar sempre pro ARQUIVO ORIGINAL do pacote (imutavel naquela versao), nunca pro
+     ".min.js" que o jsDelivr gera na hora, nem pra "@2" (flutuante). Pra atualizar uma biblioteca: trocar a versao na
+     URL e recalcular o hash -  curl -s URL | openssl dgst -sha384 -binary | openssl base64 -A  - e conferir a tela.
+     Hash errado = a biblioteca simplesmente nao carrega (erro de integrity no console) e o sistema nao abre. -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css" integrity="sha384-6LFfkTKLRlzFtgx8xsWyBdKGpcMMQTkv+dB7rAbugeJAu1Ym2q1Aji1cjHBG12Xh" crossorigin="anonymous">
 <style>
   :root{
     --wine:#6b1f33; --wine-dark:#4a1523; --wine-light:#8a3350; --gold:#c9a15a;
@@ -301,10 +307,10 @@
 <div id="modalRoot"></div>
 <div id="toast" class="toast"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0/dist/umd/supabase.js" integrity="sha384-iLddHTLokph6Omwoyid4XKxHaWa6w41BnoEj0q5oOrzmYPpHIKt1wyjReA7s//pP" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js" integrity="sha384-tOUygabpHGzWXpKv3qJM5f9tSgU6p5f4ooCayrNDwzm3/3/CDMzgHMLQZiMMGghV" crossorigin="anonymous"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
-<script src="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.js" integrity="sha384-jrOgQzBlDeUNdmQn3rUt/PZD+pdcRBdWd/HWRqRo+n2OR2QtGyjSaJC0GiCeH+ir" crossorigin="anonymous"></script>
 <script>
 /* ============================================================
    JJ SOLENE — SISTEMA DE GESTÃO (v2 — banco de dados na nuvem)
@@ -5254,7 +5260,8 @@ function buildCatalogHTML(sbUrl, sbAnon){
   '<style>\n' + CATALOG_CSS + '\n</style>\n' +
   '</head>\n<body>\n' +
   '<div id="app"><div style="padding:60px;text-align:center;color:#8a7568;">Carregando catálogo...</div></div>\n' +
-  '<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"><\/script>\n' +
+  // versao exata + SRI: ver o comentario no <head> do admin (achado jjs-08). Mudou aqui? Rode scripts/gera-catalogo.js.
+  '<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0/dist/umd/supabase.js" integrity="sha384-iLddHTLokph6Omwoyid4XKxHaWa6w41BnoEj0q5oOrzmYPpHIKt1wyjReA7s//pP" crossorigin="anonymous"><\/script>\n' +
   '<script>\nvar SB_URL = ' + JSON.stringify(sbUrl) + ';\nvar SB_ANON = ' + JSON.stringify(sbAnon) + ';\n' + CATALOG_JS + '\n<\/script>\n' +
   '</body>\n</html>';
 }

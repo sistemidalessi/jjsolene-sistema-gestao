@@ -163,8 +163,12 @@ shipping-carrier API proxying, not a Postgres RPC) — the admin side never hits
   3. **"Any authenticated user" is not "staff".** Public sign-up is a Supabase Auth setting, not
      something RLS controls, so policies must use `is_staff()` (has a `profiles` row), never
      `auth.role() = 'authenticated'` — with sign-up open, that second form let anyone who created
-     an account read every customer (CPF included) and order. Keep "Allow new users to sign up"
-     **off** in the dashboard; staff are created via Authentication → Add user.
+     an account read every customer (CPF included) and order. "Allow new users to sign up" was
+     switched **off** in the dashboard on 2026-09-21 (`auth/v1/settings` now answers
+     `disable_signup: true`, and a real `signup` call returns `signup_disabled`) — keep it off;
+     staff are created via Authentication → Add user. There are no views in this schema; if one
+     is ever added, create it `with (security_invoker = true)`, or it bypasses the RLS of the
+     tables under it (that exact thing had to be patched in Rafa 3D the same day).
   4. Every `security definer` function carries `set search_path = public`.
   5. `attach_payment_receipt` is a *claim from the customer's browser*, not proof of payment — the
      card check (`payment_check`) runs client-side. The Pedidos screen says so; moving that check

@@ -46,14 +46,21 @@ publicly, but if a custom domain gets added later, this note can go away):
 - All edits happen directly in `index.html`. There is no linter or automated test suite — verify
   changes by reloading in a browser and exercising the actual flow.
 - The app talks to a live Supabase project over the network, so testing requires network access.
-- **No DDL access**: schema changes (new tables/columns, RLS policies, Postgres functions) cannot
-  be applied from the browser/anon key. When a task needs one, write the SQL and have the project
-  owner run it in the Supabase SQL Editor — don't assume a migration file exists locally to check.
+- **DDL never goes through the app**: schema changes (new tables/columns, RLS policies, Postgres
+  functions) cannot be applied from the browser/anon key. Write the SQL, save it under `docs/`, and
+  either have the owner run it in the Supabase SQL Editor or — when the session has the Supabase
+  connector (it did on 2026-09-21; project ref `pcvcpylcpuvprpkydbxf` is **production**, there is no
+  staging) — apply it with the owner's explicit go-ahead. The routine that worked: read the real
+  state first (`pg_policies`, `pg_get_functiondef`), rehearse the whole script plus tests inside a
+  transaction that ends in a deliberate `raise exception` carrying the results (so everything,
+  test rows included, rolls back), confirm nothing persisted, then `apply_migration`, then attack
+  it from outside with the anon key via `curl`. Don't assume a migration file exists locally.
   `docs/*.sql` is **not** a complete schema, and its files come in two flavours — check which one
   you're reading before trusting it:
   - *Actually run* against the project: `atendimento-schema.sql`, `filtros-catalogo-schema.sql`,
     `pedidos-endereco-etiqueta-schema.sql`, `phibo-import-schema.sql`,
-    `produtos-modelo-cor-schema.sql`, plus the dated `limpeza-*` cleanup scripts.
+    `produtos-modelo-cor-schema.sql`, `seguranca-2026-09-21-etapa1-rpc-e-politicas.sql`, plus the
+    dated `limpeza-*` cleanup scripts.
   - *Reconstructed from client code*, never run, for the tables that only ever existed in the
     Supabase project: `bag-delivery-schema.sql`, `inventario-schema.sql`, `cashback-schema.sql`,
     `conciliacao-bancaria-schema.sql`, `ncm-reference-schema.sql`. Each carries a header saying so,
@@ -130,10 +137,42 @@ shipping-carrier API proxying, not a Postgres RPC) — the admin side never hits
   `set_order_payment_method`, `set_order_installments`, `set_order_manual_gift`. Called from the
   **admin app**: `confirm_order`, `cancel_order`, `adjust_stock`, `reserve_bag_stock`,
   `get_user_id_by_email`. Called only from inside RLS policies (never client-side): `is_admin`,
-  `current_seller_id`. Their SQL bodies aren't in this repo; if a change needs to touch one, ask the
-  owner to paste `pg_get_functiondef('name'::regproc)` output first rather than guessing —
-  `reserve_stock`/`confirm_order` in particular do multi-step stock/finance work that's risky to
-  reconstruct blind.
+  `is_staff`, `current_seller_id`. **The real bodies of all of them, as of 2026-09-21, are in
+  `docs/seguranca-2026-09-21-etapa1-rpc-e-politicas.sql`** (taken from production with
+  `pg_get_functiondef`, not reconstructed) — start from that file, and still re-read the live
+  definition before changing one, since the project can drift from the repo.
+  `reserve_stock`/`confirm_order` do multi-step stock/finance work; never rewrite them blind.
+- **Security model of those RPCs (2026-09-21 — read before adding or changing one).** A
+  `security definer` function bypasses RLS, and the anon key is public (it's in the catalog's HTML),
+  so *a function with no check inside is a public endpoint that ignores every policy.* Until
+  2026-09-21 the five admin RPCs had no check and were executable by `anon`: any visitor could zero
+  the stock, confirm their own unpaid order (sale + "pago" finance row + cashback), cancel others'
+  orders, and look up user ids by e-mail. The rules now, all enforced in the database:
+  1. **Admin-side RPC** → first line `if not public.is_staff() then raise exception 'Acesso negado'
+     using errcode = '42501'` (`is_admin()` when only admins may call it), **and**
+     `revoke execute ... from public, anon` + `grant ... to authenticated, service_role`. Both
+     locks, always: Postgres grants EXECUTE to PUBLIC by default on every new function.
+  2. **Catalog-side (anon) RPC** → treat every argument as hostile. `reserve_stock` recomputes the
+     unit price from `products` (same rule as `lineUnitPrice()` in `CATALOG_JS`: `percent`/`fixed`
+     discount once `qty >= discount_min_qty`) and **rejects** the order if the browser's price is off
+     by more than 1 cent ("O preço de um item mudou…") — so *if you change how the catalog prices a
+     line, change `reserve_stock` in the same commit or every checkout fails.* It also rejects
+     `qty < 1`, validates the gift line against `gift_rules`, and the `set_order_*` setters only
+     touch `status = 'pendente'` orders. `upsert_customer` only fills blank fields of an existing
+     customer (a visitor who knows a phone number can no longer rename that customer).
+  3. **"Any authenticated user" is not "staff".** Public sign-up is a Supabase Auth setting, not
+     something RLS controls, so policies must use `is_staff()` (has a `profiles` row), never
+     `auth.role() = 'authenticated'` — with sign-up open, that second form let anyone who created
+     an account read every customer (CPF included) and order. Keep "Allow new users to sign up"
+     **off** in the dashboard; staff are created via Authentication → Add user.
+  4. Every `security definer` function carries `set search_path = public`.
+  5. `attach_payment_receipt` is a *claim from the customer's browser*, not proof of payment — the
+     card check (`payment_check`) runs client-side. The Pedidos screen says so; moving that check
+     into an Edge Function is the open improvement.
+  Still open from the 2026-09-11 audit: cost/margin columns of `products` and internal fields of
+  `settings` are readable by `anon` because the catalog does `select("*")` (needs the catalog
+  switched to explicit column lists *first*, then column-level grants — etapa 2); `get_my_orders`
+  answers to anyone who knows a phone number.
 - The pattern behind the `set_order_*` family is worth copying: `reserve_stock` isn't safe to modify
   blind, so every new checkout field gets its own tiny setter RPC called right after the reservation
   succeeds, rather than being threaded into `reserve_stock`'s signature.
@@ -275,3 +314,9 @@ different Phibo exports have arrived in both formats.
 - User-visible data flows into HTML through `escapeHtml()`. Since every panel is built by string
   concatenation, forgetting it is an XSS hole *and* breaks rendering on any name with an apostrophe
   — check new `innerHTML` strings for it.
+- **Text inside the JS of an `onclick="..."` attribute needs `escapeHtml(jsStr(x))` — `jsStr` first,
+  `escapeHtml` second.** The other order (`escapeHtml(x).replace(/'/g,"\\'")`) does nothing: the
+  browser decodes `&#39;` back to `'` *before* running the JS, so the string breaks — a Pix
+  description of `');alert(1);//` in an imported OFX statement executed code in the admin's session
+  until 2026-09-21, and a plain `D'Avila` broke the button. And `escapeHtml` does not make a URL
+  safe: before putting untrusted text in `href`, require `^https://` (it lets `javascript:` through).

@@ -1231,7 +1231,12 @@ function pedidoCardHtml(o, settings){
     '</div></div>';
   html += '<div class="pedido-items">'+escapeHtml(itemsTxt||'sem itens')+'</div>';
   if(o.payment_method==='cartao_infinitepay'){
-    html += '<div class="pedido-items"><span class="tag info">Cartão via InfinitePay</span> '+(o.receipt_url ? '<a href="'+escapeHtml(o.receipt_url)+'" target="_blank">Ver comprovante</a>' : '<span style="color:var(--muted);">comprovante ainda não retornou</span>')+'</div>';
+    // Segurança (21/09/2026): quem grava payment_method/receipt_url é o NAVEGADOR DO CLIENTE (RPC pública
+    // attach_payment_receipt) — é um aviso dele, não uma prova de pagamento. Por isso: o link só vira clicável se
+    // for https:// (escapeHtml sozinho não barra "javascript:"), abre com noopener, e a tela lembra de conferir
+    // o recebimento na InfinitePay antes de confirmar o pedido.
+    var comprovanteOk = /^https:\/\//i.test(o.receipt_url||'');
+    html += '<div class="pedido-items"><span class="tag info">Cartão via InfinitePay</span> '+(comprovanteOk ? '<a href="'+escapeHtml(o.receipt_url)+'" target="_blank" rel="noopener noreferrer">Ver comprovante</a>' : '<span style="color:var(--muted);">comprovante ainda não retornou</span>')+' <span style="color:var(--muted);">· confira o recebimento no app da InfinitePay antes de confirmar</span></div>';
   }
   if(o.coupon_code || (o.discount_amount>0) || o.gift_product_id){
     let extras = [];
@@ -4635,7 +4640,11 @@ async function renderConciliacaoResults(){
     html += '<table><tr><th>Data</th><th>Descrição (banco)</th><th>Valor</th><th></th></tr>';
     unmatched.forEach(function(t){
       html += '<tr><td>'+fmtDate(t.date)+'</td><td>'+escapeHtml(t.memo||'—')+'</td><td>'+fmtMoney(t.amount)+'</td>';
-      html += '<td><button class="btn small outline" onclick="openFinanceFormFromBank(\''+t.id+'\',\''+t.date+'\','+t.amount+',\''+escapeHtml(t.memo||'').replace(/'/g,"\\'")+'\')">+ Lançar</button></td></tr>';
+      // Segurança (21/09/2026): texto dentro de JS de atributo é jsStr() PRIMEIRO e escapeHtml() DEPOIS. Ao contrário
+      // (escapeHtml e depois trocar aspa) não protege: o navegador decodifica &#39; de volta pra ' antes de rodar o JS,
+      // e o memo do extrato é texto de quem pagou o Pix. Quebra de linha vira espaço (senão a string JS fica inválida).
+      var memoJs = escapeHtml(jsStr(String(t.memo||'').replace(/[\r\n]+/g,' ')));
+      html += '<td><button class="btn small outline" onclick="openFinanceFormFromBank(\''+escapeHtml(jsStr(t.id))+'\',\''+escapeHtml(jsStr(t.date))+'\','+(Number(t.amount)||0)+',\''+memoJs+'\')">+ Lançar</button></td></tr>';
     });
     html += '</table>';
   }

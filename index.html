@@ -7198,7 +7198,7 @@ async function importPhiboEstoque(text){
   const existentePorSku = new Map();
   const todosSkus = Array.from(groups.keys());
   for(let i=0; i<todosSkus.length; i+=80){ // em lotes, pra lista de SKUs não estourar o tamanho da URL
-    const { data: lote, error: errLote } = await SUPA.from('products').select('sku,name,color,cost_price,sale_price').in('sku', todosSkus.slice(i, i+80));
+    const { data: lote, error: errLote } = await SUPA.from('products').select('sku,name,color,cost_price,sale_price,product_sizes(size,stock)').in('sku', todosSkus.slice(i, i+80));
     if(errLote) throw errLote;
     (lote||[]).forEach(function(p){ existentePorSku.set(p.sku, p); });
   }
@@ -7220,6 +7220,30 @@ async function importPhiboEstoque(text){
     manterPrecos = !confirm(precoDiferente.length+' produto(s) que já existem estão com preço ou custo diferente no arquivo:\n\n'+exemplos+mais+'\n\nOK = trocar pelos valores do ARQUIVO.\nCancelar = manter os preços do SISTEMA (o resto da importação segue normal).');
   }
   result.pricesKept = 0;
+
+  // Mesma proteção pro estoque: a quantidade do arquivo SUBSTITUI a do sistema (não soma), então
+  // um arquivo antigo apagaria, sem aviso, as vendas e os ajustes feitos desde que ele foi gerado.
+  let manterEstoque = false;
+  const estoqueDiferente = [];
+  for(const [sku, groupRows] of groups){
+    const atual = existentePorSku.get(sku);
+    if(!atual) continue;
+    const estoqueAtual = new Map((atual.product_sizes||[]).map(function(s){ return [s.size, Number(s.stock)||0]; }));
+    groupRows.forEach(function(g){
+      const size = (g.r[8]||'').trim();
+      if(!size || !estoqueAtual.has(size)) return; // tamanho novo não tem o que proteger
+      const qtdArq = Number(g.r[9])||0;
+      if(estoqueAtual.get(size)!==qtdArq) estoqueDiferente.push({ atual, size, qtdSis: estoqueAtual.get(size), qtdArq });
+    });
+  }
+  if(estoqueDiferente.length){
+    const exemplosE = estoqueDiferente.slice(0,8).map(function(d){
+      return '• '+d.atual.name+(d.atual.color ? ' ('+d.atual.color+')' : '')+' tam. '+d.size+': sistema '+d.qtdSis+' → arquivo '+d.qtdArq;
+    }).join('\n');
+    const maisE = estoqueDiferente.length>8 ? '\n• +'+(estoqueDiferente.length-8)+' outro(s)...' : '';
+    manterEstoque = !confirm(estoqueDiferente.length+' tamanho(s) de produtos que já existem estão com quantidade diferente no arquivo:\n\n'+exemplosE+maisE+'\n\nOK = SUBSTITUIR pelo estoque do ARQUIVO.\nCancelar = manter o estoque do SISTEMA (tamanhos e produtos novos entram normalmente).');
+  }
+  result.stockKept = 0;
 
   for(const [sku, groupRows] of groups){
     const first = groupRows[0].r;
@@ -7295,6 +7319,13 @@ async function importPhiboEstoque(text){
           let barcode = (gr[7]||'').trim();
           if(!size){ throw new Error('Linha sem tamanho'); }
           if(/^gera$/i.test(barcode)) barcode = generateBarcode(sku, size);
+          // Mantendo o estoque do sistema: o tamanho que já existe não é tocado (nem quantidade
+          // nem código de barras); só entra o tamanho que ainda não existia.
+          const jaTem = existentePorSku.get(sku);
+          if(manterEstoque && jaTem && (jaTem.product_sizes||[]).some(function(s){ return s.size===size; })){
+            if(estoqueDiferente.some(function(d){ return d.atual.sku===sku && d.size===size; })) result.stockKept++;
+            continue;
+          }
           sizePayloads.push({ product_id:productId, size, stock, barcode });
         }catch(e){
           result.errors.push({row:rowNum, reason:e.message||String(e)});
@@ -7312,7 +7343,7 @@ async function importPhiboEstoque(text){
   return result;
 }
 function phiboResultHtml(result){
-  let html = '<strong>'+result.created+' criado(s), '+result.updated+' atualizado(s), '+result.skipped+' pulado(s)'+(result.noNcm?', '+result.noNcm+' sem NCM':'')+(result.pricesKept?', preço do sistema mantido em '+result.pricesKept:'')+'.</strong>';
+  let html = '<strong>'+result.created+' criado(s), '+result.updated+' atualizado(s), '+result.skipped+' pulado(s)'+(result.noNcm?', '+result.noNcm+' sem NCM':'')+(result.pricesKept?', preço do sistema mantido em '+result.pricesKept:'')+(result.stockKept?', estoque do sistema mantido em '+result.stockKept+' tamanho(s)':'')+'.</strong>';
   if(result.errors.length){
     html += '<div style="max-height:200px;overflow-y:auto;margin-top:6px;"><ul style="margin:4px 0 0;padding-left:18px;">';
     result.errors.slice(0,30).forEach(function(e){

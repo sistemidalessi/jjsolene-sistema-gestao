@@ -79,8 +79,8 @@ publicly, but if a custom domain gets added later, this note can go away):
 - **The catalog never does `select("*")` on `products` or `settings`** — it selects `PRODUCT_COLS` /
   `SETTINGS_COLS` (top of `loadData` in `CATALOG_JS`). RLS filters rows, not columns: with `"*"`
   every visitor received each product's purchase cost and margin indexes. The matching database
-  half is `docs/seguranca-2026-09-21-etapa2-colunas.sql` (column-level grants for `anon`); once it
-  is applied, asking for a column outside those lists — or for `"*"` — returns 42501 and the catalog
+  half is `docs/seguranca-2026-09-21-etapa2-colunas.sql` (column-level grants for `anon`), **applied
+  to production on 2026-09-21**: asking for a column outside those lists — or for `"*"` — returns 42501 and the catalog
   opens **empty**. So a new column the catalog needs goes in *both* places: the list here and a
   `grant select (col) on ... to anon`.
 - **Regenerating the catalog: `node scripts/gera-catalogo.js`** (repo root). It does exactly what
@@ -187,10 +187,10 @@ shipping-carrier API proxying, not a Postgres RPC) — the admin side never hits
   5. `attach_payment_receipt` is a *claim from the customer's browser*, not proof of payment — the
      card check (`payment_check`) runs client-side. The Pedidos screen says so; moving that check
      into an Edge Function is the open improvement.
-  Still open from the 2026-09-11 audit: cost/margin columns of `products` and internal fields of
-  `settings` are readable by `anon` because the catalog does `select("*")` (needs the catalog
-  switched to explicit column lists *first*, then column-level grants — etapa 2); `get_my_orders`
-  answers to anyone who knows a phone number.
+  Still open from the 2026-09-11 audit: `get_my_orders` answers to anyone who knows a phone
+  number. Also found on 2026-09-21, not security: **`get_bestseller_counts` does not exist in the
+  database** (`docs/filtros-catalogo-schema.sql` defines it, but that part was never run or was
+  dropped) — the catalog calls it, gets a 404 and silently skips the "mais vendidos" ordering.
 - The pattern behind the `set_order_*` family is worth copying: `reserve_stock` isn't safe to modify
   blind, so every new checkout field gets its own tiny setter RPC called right after the reservation
   succeeds, rather than being threaded into `reserve_stock`'s signature.

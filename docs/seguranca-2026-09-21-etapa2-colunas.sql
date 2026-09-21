@@ -2,10 +2,14 @@
 -- JJ Solene — correção de segurança, ETAPA 2 (21/09/2026): o visitante do
 -- catálogo deixa de enxergar custo e margem dos produtos.
 --
--- STATUS: AINDA NÃO APLICADO. Só pode rodar DEPOIS que o catálogo novo (o
--- que pede colunas explícitas — PRODUCT_COLS / SETTINGS_COLS em CATALOG_JS)
--- estiver publicado E o cache do GitHub Pages (10 min) tiver expirado.
--- Rodar antes disso faz o catálogo ANTIGO, que pede "*", abrir vazio.
+-- STATUS: JÁ APLICADO EM PRODUÇÃO em 21/09/2026 às 15:05 (migration
+-- `seguranca_etapa2_colunas_anon`), com o "sim" do Anderson. O catálogo novo
+-- (PRODUCT_COLS / SETTINGS_COLS) tinha entrado no ar às 14:51; esperou-se o
+-- cache de 10 min do GitHub Pages expirar antes de rodar, senão quem estivesse
+-- com o catálogo antigo (que pedia "*") veria a loja vazia. Ensaio 11/11 numa
+-- transação desfeita; depois, de fora com a chave anon: custo, índices,
+-- fornecedor, "*" e o celular interno recusados (42501), e a lista do
+-- catálogo lendo os 172 produtos. Conferido no catálogo real num navegador.
 --
 -- O QUE ESTAVA ERRADO (achado jjs-01 da auditoria de 11/09, confirmado)
 -- A política de `products` filtra LINHAS (show_in_catalog = true), mas RLS

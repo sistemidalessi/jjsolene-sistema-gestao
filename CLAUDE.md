@@ -70,9 +70,23 @@ publicly, but if a custom domain gets added later, this note can go away):
     the app expects, and as a starting point for recreating the schema in a fresh project.
 
   When writing new DDL, save it under `docs/` with a descriptive (and, for cleanups, dated) name.
-- **Don't edit `catalogo-jjsolene.html` at the repo root** — that's an old backup copy of the
-  catalog, kept only for reference. The live one is `catalogo/index.html`, and the source of truth
-  for both is `CATALOG_CSS`/`CATALOG_JS` inside `index.html`.
+- The live catalog is `catalogo/index.html`, and its source of truth is `CATALOG_CSS`/`CATALOG_JS`
+  inside `index.html`. (There used to be an old backup copy, `catalogo-jjsolene.html`, at the repo
+  root. It was removed on 2026-09-21: GitHub Pages was serving it publicly as a second, unmaintained
+  checkout against the production database, and it did `select("*")` on `products`. Git history
+  has it if it's ever needed. The admin's "download catalog" button still names its download
+  `catalogo-jjsolene.html` — that's just a filename, unrelated.)
+- **The catalog never does `select("*")` on `products` or `settings`** — it selects `PRODUCT_COLS` /
+  `SETTINGS_COLS` (top of `loadData` in `CATALOG_JS`). RLS filters rows, not columns: with `"*"`
+  every visitor received each product's purchase cost and margin indexes. The matching database
+  half is `docs/seguranca-2026-09-21-etapa2-colunas.sql` (column-level grants for `anon`); once it
+  is applied, asking for a column outside those lists — or for `"*"` — returns 42501 and the catalog
+  opens **empty**. So a new column the catalog needs goes in *both* places: the list here and a
+  `grant select (col) on ... to anon`.
+- **Regenerating the catalog: `node scripts/gera-catalogo.js`** (repo root). It does exactly what
+  the next bullet describes by hand, and was verified on 2026-09-21 to reproduce the published
+  `catalogo/index.html` byte for byte from the committed `index.html` — so after running it,
+  `git diff catalogo/index.html` shows only what you changed in the template.
 - To preview the *public catalog* specifically (not just the admin app) without a full publish
   cycle: extract the `CATALOG_CSS` / `CATALOG_JS` string-array constants and the `buildCatalogHTML`
   function out of `index.html`, join each array with `'\n'` (they're stored as `[...].join('\n')`),

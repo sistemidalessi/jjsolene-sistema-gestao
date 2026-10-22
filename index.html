@@ -151,6 +151,13 @@
   .items-editor{border:1px solid var(--border);border-radius:10px;padding:12px;margin:10px 0;background:#fbf6ee;}
   .items-editor .item-line{display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:8px;margin-bottom:8px;align-items:center;font-size:12.5px;}
   .items-editor .total-line{text-align:right;font-weight:700;color:var(--wine-dark);margin-top:6px;font-size:14px;}
+  /* Lista de peças discriminadas (pedidos, vendas, sacolas): foto + nome + cor + tamanho + qtd */
+  .itens-lista{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:12.5px;line-height:1.35;}
+  .itens-lista li{display:flex;align-items:center;gap:8px;}
+  .itens-lista img,.itens-lista .sem-foto{width:34px;height:42px;object-fit:cover;border-radius:5px;background:var(--cream);border:1px solid var(--border);flex:none;}
+  .itens-lista .sem-foto{display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--muted);}
+  .itens-lista .tam{display:inline-block;background:var(--wine-dark);color:#fff;border-radius:4px;padding:0 6px;font-weight:700;font-size:11.5px;margin:0 2px;}
+  .itens-lista .cor{color:var(--muted);}
   .hidden{display:none !important;}
   .switch{position:relative;display:inline-block;width:38px;height:21px;flex-shrink:0;margin-top:1px;}
   .switch input{opacity:0;width:0;height:0;}
@@ -485,6 +492,44 @@ function printReport(title, headers, rows, subtitle){
   html += '</table><script>window.print();<\/script></body></html>';
   w.document.write(html);
   w.document.close();
+}
+
+/* ============================================================
+   PEÇAS DISCRIMINADAS (pedido, venda, sacola)
+
+   A equipe se perdia nas listas que só traziam "3 item(ns)" ou o nome
+   da peça sem tamanho. Toda lista de itens de pedido/venda/sacola passa
+   por aqui, pra sair sempre igual: foto, nome, COR, TAMANHO e quantidade.
+   Os três helpers esperam itens com `products(name,color,image_url)`
+   carregados no select — sem isso a foto e a cor ficam em branco.
+   ============================================================ */
+// Texto puro (CSV, PDF de relatório): "Vestido Kate — Rose · Tam M ×2"
+function itemDesc(it){
+  const p = it.products || {};
+  return (p.name||'?') + (p.color ? ' — '+p.color : '') + (it.size ? ' · Tam '+it.size : '') + ' ×'+(it.qty||1);
+}
+function itemsText(items, sep){
+  return (items||[]).map(itemDesc).join(sep || '; ');
+}
+// Lista para a tela, com miniatura da foto.
+function itemsListHtml(items){
+  if(!items || !items.length) return '<span style="color:var(--muted);">sem itens</span>';
+  return '<ul class="itens-lista">' + items.map(function(it){
+    const p = it.products || {};
+    const foto = p.image_url ? '<img src="'+escapeHtml(p.image_url)+'" loading="lazy" alt="">' : '<span class="sem-foto">sem foto</span>';
+    return '<li>'+foto+'<span><strong>'+escapeHtml(p.name||'?')+'</strong>'+(p.color ? ' <span class="cor">'+escapeHtml(p.color)+'</span>' : '')+' <span class="tam">'+escapeHtml(it.size||'—')+'</span> ×'+(it.qty||1)+'</span></li>';
+  }).join('') + '</ul>';
+}
+// Tabela para impressão (etiqueta, nota promissória, recibo). `extra` = função
+// opcional que devolve <td>s a mais por linha (ex.: valor unitário).
+function itemsTableHtml(items, extraHeader, extra){
+  let html = '<table><tr><th style="width:44px;">Foto</th><th>Peça</th><th>Cor</th><th>Tam.</th><th>Qtd</th>'+(extraHeader||'')+'</tr>';
+  (items||[]).forEach(function(it){
+    const p = it.products || {};
+    const foto = p.image_url ? '<img src="'+escapeHtml(p.image_url)+'" style="width:36px;height:45px;object-fit:cover;border-radius:4px;" alt="">' : '';
+    html += '<tr><td>'+foto+'</td><td>'+escapeHtml(p.name||'?')+'</td><td>'+escapeHtml(p.color||'')+'</td><td><strong>'+escapeHtml(it.size||'')+'</strong></td><td>'+(it.qty||1)+'</td>'+(extra ? extra(it) : '')+'</tr>';
+  });
+  return html + '</table>';
 }
 
 /* ============================================================
@@ -1190,7 +1235,7 @@ async function renderPedidos(){
   const el = document.getElementById('tab-pedidos');
   el.innerHTML = '<div class="empty">Carregando...</div>';
   const [orders, s] = await Promise.all([
-    q(SUPA.from('orders').select('*, order_items(*, products(name))').order('date',{ascending:false}).limit(100)),
+    q(SUPA.from('orders').select('*, order_items(*, products(name,color,image_url))').order('date',{ascending:false}).limit(100)),
     getSettings()
   ]);
   ordersCache = orders;
@@ -1229,13 +1274,12 @@ function elapsedLabel(ms){
   return Math.round(hours/24)+'d';
 }
 function pedidoCardHtml(o, settings){
-  const itemsTxt = (o.order_items||[]).map(it=> (it.products?it.products.name:'?') + ' (Tam '+it.size+') x'+it.qty).join(' · ');
   const isAdminCard = currentProfile && currentProfile.role==='admin';
   let html = '<div class="pedido-card '+o.status+'">';
   html += '<div class="pedido-head"><div>'+(isAdminCard?'<input type="checkbox" class="pedido_cb" value="'+o.id+'" onchange="updateBulkBar(\'pedido_cb\')" style="margin-right:8px;">':'')+'<strong>'+escapeHtml(o.customer||'Cliente não identificado')+'</strong> · '+fmtDate(o.date)+'</div><div>'+
     (o.status==='pendente'?'<span class="tag warn">Pendente</span>':o.status==='confirmado'?'<span class="tag ok">Confirmado</span>':'<span class="tag bad">Cancelado</span>')+
     '</div></div>';
-  html += '<div class="pedido-items">'+escapeHtml(itemsTxt||'sem itens')+'</div>';
+  html += '<div class="pedido-items">'+itemsListHtml(o.order_items)+'</div>';
   if(o.payment_method==='cartao_infinitepay'){
     // Segurança (21/09/2026): quem grava payment_method/receipt_url é o NAVEGADOR DO CLIENTE (RPC pública
     // attach_payment_receipt) — é um aviso dele, não uma prova de pagamento. Por isso: o link só vira clicável se
@@ -1281,16 +1325,11 @@ function pedidoCardHtml(o, settings){
   return html;
 }
 async function printOrderShippingLabel(orderId){
-  const rows = await q(SUPA.from('orders').select('*, order_items(*, products(name,color))').eq('id', orderId));
+  const rows = await q(SUPA.from('orders').select('*, order_items(*, products(name,color,image_url))').eq('id', orderId));
   const o = rows[0];
   if(!o){ toast('Pedido não encontrado.'); return; }
   const settings = await getSettings();
   const storeName = settings.store_name || 'JJ Solene';
-  const itemsHtml = (o.order_items||[]).map(function(it){
-    const productName = it.products ? it.products.name : '?';
-    const color = it.products && it.products.color ? ' — '+it.products.color : '';
-    return '<tr><td>'+escapeHtml(productName)+escapeHtml(color)+'</td><td>'+escapeHtml(it.size||'')+'</td><td>'+it.qty+'</td></tr>';
-  }).join('');
   const addressLine1 = [o.address_street, o.address_number].filter(Boolean).join(', ') + (o.address_complement ? ' — '+o.address_complement : '');
   const addressLine2 = [o.address_neighborhood, o.address_city, o.address_state].filter(Boolean).join(' — ');
   const w = window.open('', '_blank');
@@ -1311,7 +1350,7 @@ async function printOrderShippingLabel(orderId){
   if(settings.logo_url){ html += '<img class="lb-logo" src="'+escapeHtml(settings.logo_url)+'">'; }
   html += '<div class="lb-title">Etiqueta de Envio</div>';
   html += '<div class="lb-addr"><strong>'+escapeHtml(o.customer||'')+'</strong><br>'+escapeHtml(o.phone?maskPhoneBR(o.phone):'')+'<br>'+escapeHtml(addressLine1)+'<br>'+escapeHtml(addressLine2)+'<br>CEP: '+escapeHtml(o.shipping_cep?maskCEP(o.shipping_cep):'')+'</div>';
-  html += '<table><tr><th>Peça</th><th>Tam.</th><th>Qtd</th></tr>'+itemsHtml+'</table>';
+  html += itemsTableHtml(o.order_items);
   if(o.customer_notes){ html += '<div class="lb-notes"><strong>Observações do cliente:</strong> '+escapeHtml(o.customer_notes)+'</div>'; }
   html += '<div class="lb-thanks">Obrigada por comprar com a '+escapeHtml(storeName)+'! Preparamos seu pedido com muito carinho. 🍒</div>';
   html += '</div><script>window.print();<\/script></body></html>';
@@ -1343,7 +1382,7 @@ async function deleteOrderAction(id){
 function pedidosReportData(){
   const headers = ['Data','Cliente','Status','Itens','Cupom','Total'];
   const rows = (ordersCache||[]).map(function(o){
-    const itemsTxt = (o.order_items||[]).map(function(it){ return (it.products?it.products.name:'?')+' (Tam '+it.size+') x'+it.qty; }).join(', ');
+    const itemsTxt = itemsText(o.order_items);
     const statusTxt = o.status==='pendente'?'Pendente':o.status==='confirmado'?'Confirmado':'Cancelado';
     return [ fmtDate(o.date), (o.customer||'Cliente não identificado'), statusTxt, itemsTxt, (o.coupon_code||''), String(o.total||0).replace('.',',') ];
   });
@@ -3299,7 +3338,7 @@ async function renderVendas(){
   const el = document.getElementById('tab-vendas');
   el.innerHTML = '<div class="empty">Carregando...</div>';
   const isComercial = currentProfile && currentProfile.role==='comercial';
-  let query = SUPA.from('sales').select('*, sale_items(*, products(name)), sellers(name)').order('created_at',{ascending:false});
+  let query = SUPA.from('sales').select('*, sale_items(*, products(name,color,image_url)), sellers(name)').order('created_at',{ascending:false});
   if(isComercial){ query = query.eq('seller_id', currentProfile.seller_id||'00000000-0000-0000-0000-000000000000'); }
   const sales = await q(query);
   salesCache = sales;
@@ -3313,7 +3352,7 @@ async function renderVendas(){
     if(!isComercial){ html += bulkActionBarHtml('venda_cb', {fn:'deleteSale', text:'venda'}); }
     html += '<div class="card"><table><tr>'+(isComercial?'':'<th style="width:24px;"><input type="checkbox" onchange="toggleAllCB(this,\'venda_cb\')"></th>')+'<th>Data</th><th>Cliente</th><th>Vendedor(a)</th><th>Itens</th><th>Total</th><th>Pagamento</th><th></th></tr>';
     sales.forEach(s=>{
-      html += '<tr>'+(isComercial?'':'<td><input type="checkbox" class="venda_cb" value="'+s.id+'" onchange="updateBulkBar(\'venda_cb\')"></td>')+'<td>'+fmtDate(s.date)+'</td><td>'+escapeHtml(s.customer||'—')+'</td><td>'+escapeHtml(s.sellers?s.sellers.name:'—')+'</td><td>'+(s.sale_items||[]).length+' item(ns)</td><td>'+fmtMoney(s.total)+'</td><td>'+escapeHtml(s.payment||'—')+'</td>';
+      html += '<tr>'+(isComercial?'':'<td><input type="checkbox" class="venda_cb" value="'+s.id+'" onchange="updateBulkBar(\'venda_cb\')"></td>')+'<td>'+fmtDate(s.date)+'</td><td>'+escapeHtml(s.customer||'—')+'</td><td>'+escapeHtml(s.sellers?s.sellers.name:'—')+'</td><td>'+itemsListHtml(s.sale_items)+'</td><td>'+fmtMoney(s.total)+'</td><td>'+escapeHtml(s.payment||'—')+'</td>';
       html += '<td class="row-actions">'+(s.invoice_id?'<span class="tag info">Nota gerada</span>':'<button class="btn small outline" onclick="generateInvoiceFromSale(\''+s.id+'\')">Gerar nota</button>')+(isComercial?'':' <button class="btn small danger" onclick="deleteSale(\''+s.id+'\')">Excluir</button>')+'</td></tr>';
     });
     html += '</table></div>';
@@ -3323,7 +3362,7 @@ async function renderVendas(){
 function vendasReportData(){
   const headers = ['Data','Cliente','Vendedor(a)','Itens','Total','Pagamento'];
   const rows = (salesCache||[]).map(function(s){
-    return [ fmtDate(s.date), (s.customer||''), (s.sellers?s.sellers.name:''), (s.sale_items||[]).length, String(s.total||0).replace('.',','), (s.payment||'') ];
+    return [ fmtDate(s.date), (s.customer||''), (s.sellers?s.sellers.name:''), itemsText(s.sale_items), String(s.total||0).replace('.',','), (s.payment||'') ];
   });
   return { headers, rows };
 }
@@ -3481,7 +3520,7 @@ async function renderBagDelivery(){
   const el = document.getElementById('tab-bagdelivery');
   el.innerHTML = '<div class="empty">Carregando...</div>';
   const isComercial = currentProfile && currentProfile.role==='comercial';
-  let query = SUPA.from('bag_deliveries').select('*, bag_delivery_items(*, products(name)), sellers(name)').order('sent_at',{ascending:false});
+  let query = SUPA.from('bag_deliveries').select('*, bag_delivery_items(*, products(name,color,image_url)), sellers(name)').order('sent_at',{ascending:false});
   if(isComercial){ query = query.eq('seller_id', currentProfile.seller_id||'00000000-0000-0000-0000-000000000000'); }
   const bags = await q(query);
   bagsCache = bags;
@@ -3504,7 +3543,7 @@ async function renderBagDelivery(){
       html += '<td>'+(b.sellers?escapeHtml(b.sellers.name):'—')+'</td>';
       html += '<td>'+fmtDateTime(b.sent_at)+'</td>';
       html += '<td>'+(b.deadline?('<span'+(overdue?' class="tag bad"':'')+'>'+fmtDateTime(b.deadline)+(overdue?' (vencida)':'')+'</span>'):'—')+'</td>';
-      html += '<td>'+(b.bag_delivery_items||[]).length+' peça(s)</td>';
+      html += '<td>'+itemsListHtml(b.bag_delivery_items)+'</td>';
       html += '<td>'+(b.status==='fechada'?'<span class="tag ok">Fechada</span>':'<span class="tag warn">Em andamento</span>')+'</td>';
       html += '<td class="row-actions">'+(emAndamento?'<button class="btn small" onclick="openBagCloseForm(\''+b.id+'\')">Fechar sacola</button>':'')+(b.customer_id?' <button class="btn small outline" onclick="printBagPromissoryNote(\''+b.id+'\')">🖨️ Nota</button>':'')+' <button class="btn small danger" onclick="deleteBagDelivery(\''+b.id+'\')">Excluir</button></td></tr>';
     });
@@ -3702,8 +3741,8 @@ async function deleteBagDelivery(id){
 async function openBagCloseForm(id){
   const rows = await q(SUPA.from('bag_deliveries').select('*').eq('id', id));
   const bag = rows[0];
-  const items = await q(SUPA.from('bag_delivery_items').select('*, products(name)').eq('bag_id', id));
-  currentBagCloseItems = items.map(it=> Object.assign({}, it, { product_name: it.products?it.products.name:'?', decision: it.decision==='pendente'?null:it.decision }));
+  const items = await q(SUPA.from('bag_delivery_items').select('*, products(name,color)').eq('bag_id', id));
+  currentBagCloseItems = items.map(it=> Object.assign({}, it, { product_name: it.products ? it.products.name+(it.products.color ? ' — '+it.products.color : '') : '?', decision: it.decision==='pendente'?null:it.decision }));
   let html = '<h3>Fechar sacola — '+escapeHtml(bag.customer_name)+'</h3>';
   html += '<div class="page-desc">Marque "Ficou" ou "Devolveu" pra cada peça. As que ficarem viram venda; as devolvidas só liberam a reserva.</div>';
   html += '<div class="field" style="margin-bottom:8px;"><label>📷 Bipar as peças que voltaram (marca automaticamente como "Devolveu")</label><input id="bgc_barcode" placeholder="Clique aqui e escaneie..." onkeydown="if(event.key===\'Enter\'){ event.preventDefault(); scanBarcodeBagReturn(); }"></div>';
@@ -3782,7 +3821,7 @@ async function closeBagDelivery(id){
 function bagReportData(){
   const headers = ['Cliente','Vendedor(a)','Enviada em','Prazo','Itens','Status'];
   const rows = (bagsCache||[]).map(function(b){
-    return [ b.customer_name, (b.sellers?b.sellers.name:''), fmtDateTime(b.sent_at), (b.deadline?fmtDateTime(b.deadline):''), (b.bag_delivery_items||[]).length, (b.status==='fechada'?'Fechada':'Em andamento') ];
+    return [ b.customer_name, (b.sellers?b.sellers.name:''), fmtDateTime(b.sent_at), (b.deadline?fmtDateTime(b.deadline):''), itemsText(b.bag_delivery_items), (b.status==='fechada'?'Fechada':'Em andamento') ];
   });
   return { headers, rows };
 }
@@ -3850,16 +3889,13 @@ function valorPorExtenso(valor){
   return txt;
 }
 async function printBagPromissoryNote(bagId){
-  const rows = await q(SUPA.from('bag_deliveries').select('*, bag_delivery_items(*, products(name)), customers(*)').eq('id', bagId));
+  const rows = await q(SUPA.from('bag_deliveries').select('*, bag_delivery_items(*, products(name,color,image_url)), customers(*)').eq('id', bagId));
   const bag = rows[0];
   if(!bag){ toast('Sacola não encontrada.'); return; }
   const c = bag.customers;
   if(!c){ toast('Essa sacola não tem cliente vinculado(a) — não é possível gerar a nota promissória.'); return; }
   const settings = await getSettings();
   const total = (bag.bag_delivery_items||[]).reduce(function(s,it){ return s + it.qty*it.unit_price; }, 0);
-  const itemsHtml = (bag.bag_delivery_items||[]).map(function(it){
-    return '<tr><td>'+escapeHtml(it.products?it.products.name:'?')+'</td><td>'+escapeHtml(it.size)+'</td><td>'+it.qty+'</td><td>'+fmtMoney(it.unit_price)+'</td></tr>';
-  }).join('');
   const storeName = settings.store_name || 'JJ Solene';
   const w = window.open('', '_blank');
   let html = '<html><head><title>Nota Promissória — '+escapeHtml(c.name)+'</title><style>';
@@ -3883,7 +3919,7 @@ async function printBagPromissoryNote(bagId){
   html += '<div class="np-title">Nota Promissória</div>';
   html += '<div class="np-value">Valor: <strong>'+fmtMoney(total)+'</strong><br>('+escapeHtml(valorPorExtenso(total))+')</div>';
   html += '<p>Aos <span class="np-line">'+(bag.deadline?fmtDate(bag.deadline):'____/____/______')+'</span>, pagarei(emos) por esta única via de NOTA PROMISSÓRIA a <strong>'+escapeHtml(storeName)+'</strong>, ou à sua ordem, a quantia de <strong>'+fmtMoney(total)+'</strong> ('+escapeHtml(valorPorExtenso(total))+'), em moeda corrente nacional, referente às peças retiradas em regime de "Bag Delivery" (sacola para experimentação em domicílio), relacionadas abaixo, comprometendo-me a devolvê-las em perfeito estado ou a efetuar o pagamento integral do valor acima na data de vencimento indicada.</p>';
-  html += '<table><tr><th>Peça</th><th>Tam.</th><th>Qtd</th><th>Valor unit.</th></tr>'+itemsHtml+'</table>';
+  html += itemsTableHtml(bag.bag_delivery_items, '<th>Valor unit.</th>', function(it){ return '<td>'+fmtMoney(it.unit_price)+'</td>'; });
   html += '<p><strong>Emitente (devedor):</strong> '+escapeHtml(c.name)+'<br>';
   html += '<strong>CPF:</strong> '+escapeHtml(c.cpf||'')+' &nbsp;&nbsp; <strong>Telefone:</strong> '+escapeHtml(c.phone?maskPhoneBR(c.phone):'')+'<br>';
   html += '<strong>Endereço:</strong> '+escapeHtml(formatCustomerAddress(c))+'</p>';
@@ -5196,10 +5232,12 @@ async function printInvoice(id){
   const inv = rows[0];
   if(!inv) return;
   const settings = await getSettings();
+  // Nota gerada a partir de uma venda traz as peças discriminadas; a registrada à mão só tem o total.
+  const items = inv.sale_id ? await q(SUPA.from('sale_items').select('*, products(name,color,image_url)').eq('sale_id', inv.sale_id)) : [];
   const w = window.open('', '_blank');
   w.document.write(
     '<html><head><title>Recibo '+inv.number+'</title><style>'+
-    'body{font-family:sans-serif;padding:40px;color:#2b1a1f;}h1{color:#6b1f33;}table{width:100%;border-collapse:collapse;margin-top:20px;}td{padding:8px;border-bottom:1px solid #ddd;}'+
+    'body{font-family:sans-serif;padding:40px;color:#2b1a1f;}h1{color:#6b1f33;}table{width:100%;border-collapse:collapse;margin-top:20px;}td,th{padding:8px;border-bottom:1px solid #ddd;text-align:left;font-size:13px;}th{background:#f4efe6;}'+
     '</style></head><body>'+
     '<h1>'+escapeHtml(settings.store_name)+'</h1>'+
     '<p>Recibo interno nº '+inv.number+' — não substitui NF-e oficial.</p>'+
@@ -5209,6 +5247,7 @@ async function printInvoice(id){
     '<tr><td>Documento</td><td>'+escapeHtml(inv.customer_doc||'—')+'</td></tr>'+
     '<tr><td>Valor total</td><td>'+fmtMoney(inv.total)+'</td></tr>'+
     '</table>'+
+    (items.length ? itemsTableHtml(items, '<th>Valor unit.</th>', function(it){ return '<td>'+fmtMoney(it.price)+'</td>'; }) : '')+
     '<script>window.print();<\/script>'+
     '</body></html>'
   );

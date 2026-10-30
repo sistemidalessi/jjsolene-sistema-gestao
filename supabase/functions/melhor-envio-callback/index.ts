@@ -148,7 +148,16 @@ async function quoteShipping(cepDestino: string, itens: Array<{ weight_kg: numbe
   });
   const data = await r.json();
   if (!r.ok) throw new Error("Falha ao cotar frete: " + JSON.stringify(data));
-  return data;
+  // O Melhor Envio nem sempre devolve uma lista: com uma única transportadora na conta vem UM objeto
+  // (visto em 30/10/2026: só a JeT, e o catálogo mostrava "nenhuma transportadora"); e quando ele
+  // filtra serviços no PHP, a lista vira objeto com chaves "0","2"... O catálogo espera lista, então
+  // normaliza aqui — qualquer coisa que tenha id e price vira um item.
+  if (Array.isArray(data)) return data;
+  if (data && typeof data === "object") {
+    if ("id" in data && "price" in data) return [data];
+    return Object.values(data).filter((o) => o && typeof o === "object" && "id" in (o as Record<string, unknown>));
+  }
+  return [];
 }
 
 Deno.serve(async (req: Request) => {

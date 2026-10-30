@@ -39,6 +39,15 @@ image host) must be added to the meta first, or the feature silently fails with 
 console error.** Pointing "Project URL" at another Supabase project is blocked on purpose. The dead
 `onnxruntime-web` importmap (background removal was dropped in `76dbea1`) was removed with it.
 
+**The public catalog has its own CSP** (same day), built inside `buildCatalogHTML` so the generated
+`catalogo/index.html` carries it: scripts from jsDelivr only (the catalog JS is inline and writes
+`onclick=` via innerHTML, hence `'unsafe-inline'`), styles from Google Fonts, images and media from
+Supabase Storage + `data:`/`blob:`, `connect-src` = Supabase + ViaCEP + InfinitePay (`/links`,
+`/payment_check`), `frame-src 'none'`. The InfinitePay redirect is a navigation (`location.href`) and
+WhatsApp/Instagram are links, which CSP does not govern. **New external domain in the catalog → add it
+to the `csp` string in `buildCatalogHTML` first, then `node scripts/gera-catalogo.js` and commit the
+regenerated file.**
+
 The app loads four CDN scripts: `@supabase/supabase-js` (2.116.0), `JsBarcode` (barcode rendering for
 product labels), `cropperjs` (4:5 crop on the main product photo), and Google's GSI client (one-way
 Agenda → Google Calendar sync).

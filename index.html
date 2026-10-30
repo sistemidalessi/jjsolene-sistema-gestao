@@ -5306,8 +5306,20 @@ async function generateCatalog(){
   toast('Catálogo publicado e baixado.');
 }
 
+// SEGURANCA (30/10/2026, achado jjs-08): CSP do catalogo publico, por <meta> (Pages nao manda cabecalho; nao ha modo
+// "so relatar" - o que nao esta na lista o navegador bloqueia). Lista = o que o catalogo usa, levantado no codigo e no
+// banco real (todas as imagens/midias estao no Storage do Supabase) e testado ao vivo na pagina publicada:
+//   script  -> jsDelivr (supabase-js); o JS do catalogo e inline e gera onclick= em innerHTML, dai 'unsafe-inline'
+//   style   -> Google Fonts; font -> fonts.gstatic.com
+//   img/media -> Storage do Supabase, data: e blob:  (media-src: a galeria aceita video do Storage)
+//   connect -> Supabase (REST, RPC, Edge Function melhor-envio-callback), ViaCEP e InfinitePay (links/payment_check)
+//   frame 'none', object 'none', base-uri e form-action 'self'. O redirecionamento pro checkout da InfinitePay e
+//   navegacao (location.href), que a CSP nao controla; os links de WhatsApp/Instagram idem.
+// Dominio novo no catalogo (API, CDN, imagem de fora) ENTRA AQUI PRIMEIRO, depois regenerar com scripts/gera-catalogo.js.
+// A URL do Supabase vai literal na politica, igual ao resto do arquivo gerado.
 function buildCatalogHTML(sbUrl, sbAnon){
-  return '<!DOCTYPE html>\n<html lang="pt-BR">\n<head>\n<meta charset="UTF-8">\n<meta name="viewport" content="width=device-width, initial-scale=1.0">\n<title>JJ Solene - Catálogo</title>\n' +
+  var csp = "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: " + sbUrl + "; media-src " + sbUrl + "; connect-src 'self' " + sbUrl + " https://viacep.com.br https://api.checkout.infinitepay.io; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'";
+  return '<!DOCTYPE html>\n<html lang="pt-BR">\n<head>\n<meta charset="UTF-8">\n<meta http-equiv="Content-Security-Policy" content="' + csp + '">\n<meta name="viewport" content="width=device-width, initial-scale=1.0">\n<title>JJ Solene - Catálogo</title>\n' +
   '<link rel="preconnect" href="https://fonts.googleapis.com">\n' +
   '<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;0,700;1,600;1,700&family=Dancing+Script:wght@600;700&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">\n' +
   '<style>\n' + CATALOG_CSS + '\n</style>\n' +

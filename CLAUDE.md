@@ -48,6 +48,15 @@ WhatsApp/Instagram are links, which CSP does not govern. **New external domain i
 to the `csp` string in `buildCatalogHTML` first, then `node scripts/gera-catalogo.js` and commit the
 regenerated file.**
 
+**"Meus pedidos" is gone from the catalog and `get_my_orders` is not executable by any role** (since
+2026-10-30, finding `jjs-05`): it returned name, cashback and purchases of whoever owned a phone number,
+looking up the **customers** table (the physical-store base, not just site orders). The function stays
+in the DB with no caller; bring the feature back only behind a WhatsApp one-time code. **The waitlist
+is written only through the RPC `waitlist_join(p_product_id, p_name, p_phone)`** (`jjs-13`): name 1–80,
+phone 10–11 digits, product visible in the catalog, no duplicate per phone+product, 10 per phone per
+24 h, 150 per hour overall; `anon` has no INSERT on `waitlist` anymore. SQL and rationale in
+`docs/seguranca-2026-10-30-meus-pedidos-e-lista-de-espera.sql`.
+
 The app loads four CDN scripts: `@supabase/supabase-js` (2.116.0), `JsBarcode` (barcode rendering for
 product labels), `cropperjs` (4:5 crop on the main product photo), and Google's GSI client (one-way
 Agenda → Google Calendar sync).

@@ -630,8 +630,8 @@ function buildHeader(data){
   actions.appendChild(filterBtn);
   var searchBtn = document.createElement("button"); searchBtn.className="icon-btn"; searchBtn.innerHTML=UI_ICONS.search; searchBtn.title="Buscar produtos"; searchBtn.onclick=openSearch;
   actions.appendChild(searchBtn);
-  var acctBtn = document.createElement("button"); acctBtn.className="icon-btn"; acctBtn.innerHTML=UI_ICONS.user; acctBtn.title="Meus pedidos"; acctBtn.onclick=openMyOrders;
-  actions.appendChild(acctBtn);
+  // "Meus pedidos" (consulta por telefone) saiu em 30/10/2026 (achado jjs-05): qualquer visitante via nome,
+  // cashback e compras de quem tivesse aquele telefone. Volta quando houver codigo por WhatsApp.
   var cartBtn = document.createElement("button"); cartBtn.className="icon-btn"; cartBtn.id="cartIconBtn"; cartBtn.innerHTML = UI_ICONS.bag+"<span class=\"icon-badge hidden\" id=\"cartBadge\">0</span>"; cartBtn.onclick=openCart;
   actions.appendChild(cartBtn);
   header.appendChild(actions);
@@ -649,7 +649,6 @@ function buildDrawer(data){
     if(!has) return;
     html += "<button type=\"button\" class=\"drawer-link\" onclick=\"CATALOG.filterCategoryId='"+c.id+"';switchTab('novidades');closeDrawer();\">"+c.icon+" "+esc(c.name)+"</button>";
   });
-  html += "<button type=\"button\" class=\"drawer-link\" onclick=\"closeDrawer();openMyOrders();\">📦 Meus pedidos</button>";
   drawer.innerHTML = html;
   document.body.appendChild(drawer);
 }
@@ -1187,7 +1186,11 @@ function openWaitlistForm(p){
     var name = (document.getElementById("wl_name").value||"").trim();
     var phone = (document.getElementById("wl_phone").value||"").replace(/\D/g,"");
     if(!name || !phone){ alert("Preencha nome e telefone."); return; }
-    await sb.from("waitlist").insert([{ product_id: p.id, customer_name: name, phone: phone }]);
+    if(phone.length < 10 || phone.length > 11){ alert("Telefone com DDD, 10 ou 11 números."); return; }
+    // Entra pela RPC waitlist_join (30/10/2026, achado jjs-13): valida nome/telefone/produto, nao duplica e
+    // limita a quantidade por telefone e por hora. O visitante nao grava mais direto na tabela.
+    var res = await sb.rpc("waitlist_join", { p_product_id: p.id, p_name: name, p_phone: phone });
+    if(res.error){ alert(res.error.message || "Não deu pra registrar agora. Tenta de novo em instantes."); return; }
     m.close();
     alert("Prontinho! Vamos te avisar assim que chegar.");
   };
@@ -1398,30 +1401,6 @@ function genericModal(innerHtml){
   document.body.appendChild(ov);
   document.body.appendChild(box);
   return { overlay: ov, box: box, close: closeModalBox };
-}
-function openMyOrders(){
-  var m = genericModal("<div class=\"myorders-box\"><strong>Meus pedidos</strong><p style=\"color:#8a7568;\">Digite o telefone usado na compra para ver seu histórico e saldo de cashback.</p><input id=\"mo_phone\" placeholder=\"Seu telefone (com DDD)\" oninput=\"applyMask(this,maskPhoneBR)\"><button class=\"checkout-btn\" id=\"mo_btn\" style=\"margin-top:0;\">Consultar</button><div id=\"mo_result\"></div></div>");
-  document.getElementById("mo_btn").onclick = async function(){
-    var phone = (document.getElementById("mo_phone").value||"").replace(/\D/g,"");
-    if(!phone) return;
-    var res = await sb.rpc("get_my_orders", { p_phone: phone });
-    var box = document.getElementById("mo_result");
-    if(res.error || !res.data || !res.data.found){
-      box.innerHTML = "<p style=\"color:#b3261e;font-size:12.5px;\">Nenhum cadastro encontrado com esse telefone.</p>";
-      return;
-    }
-    var d = res.data;
-    var html = "<p><strong>"+esc(d.name)+"</strong><br>Saldo de cashback: <strong>"+money(d.cashback_balance)+"</strong></p>";
-    if(!d.orders || d.orders.length===0){ html += "<p style=\"color:#8a7568;font-size:12.5px;\">Nenhuma compra confirmada ainda.</p>"; }
-    else {
-      d.orders.forEach(function(o){
-        html += "<div class=\"ordrow\"><strong>"+new Date(o.date).toLocaleDateString("pt-BR")+"</strong> — "+money(o.total)+"<br>";
-        (o.items||[]).forEach(function(it){ html += esc(it.product_name)+" (Tam "+esc(it.size)+") x"+it.qty+"<br>"; });
-        html += "</div>";
-      });
-    }
-    box.innerHTML = html;
-  };
 }
 function cartSubtotal(){ return cart.filter(function(it){return !it.isGift;}).reduce(function(s,it){return s + it.qty*lineUnitPrice(it);},0); }
 function bestGiftRule(subtotal){

@@ -41,7 +41,11 @@ Deno.serve(async (req) => {
   const callerId = userData.user.id;
 
   const { data: profile } = await supabase.from("profiles").select("role").eq("id", callerId).maybeSingle();
-  const isAdmin = profile?.role === "admin";
+  // Sem linha em profiles não é da equipe (auditoria de 11/09/2026, achado jjs-06): um JWT
+  // válido sozinho não basta — o cadastro público do Auth já está desligado, mas a regra fica
+  // aqui também, porque esta function usa service role e não passa pela RLS.
+  if (!profile) return json({ ok: false, error: "Sem acesso" }, 403);
+  const isAdmin = profile.role === "admin";
 
   let payload: any;
   try {
@@ -52,10 +56,11 @@ Deno.serve(async (req) => {
 
   try {
     if (payload.template_key) {
-      const messageId = await sendViaTemplate(supabase, payload);
-      return json({ ok: true, message_id: messageId });
+      const result = await sendViaTemplate(supabase, payload);
+      return json({ ok: true, ...result });
     }
     if (payload.conversation_id && typeof payload.body === "string") {
+      if (payload.body.length > 4000) return json({ ok: false, error: "Mensagem longa demais (máx. 4000 caracteres)" }, 400);
       const messageId = await sendManualReply(supabase, payload, callerId, isAdmin);
       return json({ ok: true, message_id: messageId });
     }
@@ -112,24 +117,48 @@ async function sendManualReply(
   return messageId;
 }
 
-async function sendViaTemplate(supabase: any, payload: any): Promise<string | null> {
-  const phone = String(payload.phone || "").replace(/\D/g, "");
-  if (!phone) throw new Error("Telefone inválido");
+// Template automático: o cliente informa SÓ o pedido (order_id). Telefone e textos saem do
+// próprio pedido, no banco — nunca do corpo da requisição. Antes (até 30/10/2026) o corpo
+// trazia `phone` e `params` livres: qualquer conta logada transformava o número oficial da
+// loja numa ferramenta de spam pra qualquer telefone, com texto à escolha, e ainda criava
+// conversas fantasmas em `conversations` (auditoria de 11/09/2026, achado jjs-06).
+async function sendViaTemplate(
+  supabase: any,
+  payload: any,
+): Promise<{ message_id: string | null; already_sent?: boolean }> {
+  const orderId = String(payload.order_id || "");
+  if (!/^[0-9a-f-]{36}$/i.test(orderId)) throw new Error("Informe order_id (o pedido confirmado que gera o aviso)");
+
+  const { data: order } = await supabase.from("orders").select("id, customer, phone, status").eq("id", orderId).maybeSingle();
+  if (!order) throw new Error("Pedido não encontrado");
+  if (order.status !== "confirmado") throw new Error("Só pedido confirmado dispara aviso automático (status atual: " + order.status + ")");
+  const phone = String(order.phone || "").replace(/\D/g, "");
+  if (!phone) throw new Error("Pedido sem telefone");
 
   const { data: tpl } = await supabase.from("message_templates").select("*").eq("key", payload.template_key)
     .maybeSingle();
   if (!tpl || !tpl.active) throw new Error("Template não encontrado ou inativo: " + payload.template_key);
   if (!tpl.meta_template_name) throw new Error("Template sem nome aprovado na Meta — configure meta_template_name");
 
-  const conv = await findOrCreateWhatsAppConversation(supabase, phone, payload.params?.customer_name);
+  const customerName = String(order.customer || "").slice(0, 80);
+  const orderNumber = "*" + orderId.slice(0, 8).toUpperCase() + "*"; // mesmo formato que o admin sempre mostrou
+  const params = { customer_name: customerName, order_number: orderNumber };
 
-  const filledBody = fillTemplate(tpl.body, payload.params || {});
+  const conv = await findOrCreateWhatsAppConversation(supabase, phone, customerName);
+
+  // Um aviso por pedido e template: confirmar duas vezes (ou um clique repetido) não manda
+  // a mesma mensagem de novo pra cliente.
+  const { data: repetido } = await supabase.from("messages").select("id, meta_message_id")
+    .eq("conversation_id", conv.id).eq("template_key", tpl.key).ilike("body", "%" + orderNumber + "%").limit(1).maybeSingle();
+  if (repetido) return { message_id: repetido.meta_message_id ?? null, already_sent: true };
+
+  const filledBody = fillTemplate(tpl.body, params);
   // Os nomes abaixo (parameter_name) precisam bater com as variáveis nomeadas
   // {{customer_name}}, {{order_number}} do template aprovado na Meta — hoje fixo pro
   // template "pedido_confirmado_v1"; ajustar aqui se o template for alterado.
   const orderedParams = [
-    { name: "customer_name", value: payload.params?.customer_name || "" },
-    { name: "order_number", value: payload.params?.order_number || "" },
+    { name: "customer_name", value: customerName },
+    { name: "order_number", value: orderNumber },
   ];
   const messageId = await sendWhatsAppTemplate(
     WHATSAPP_PHONE_NUMBER_ID,
@@ -159,7 +188,7 @@ async function sendViaTemplate(supabase: any, payload: any): Promise<string | nu
   // falha aqui não deve derrubar a confirmação por WhatsApp, que é a que sempre funciona.
   await notifyLinkedSocialConversations(supabase, phone, filledBody, tpl.key);
 
-  return messageId;
+  return { message_id: messageId };
 }
 
 async function notifyLinkedSocialConversations(

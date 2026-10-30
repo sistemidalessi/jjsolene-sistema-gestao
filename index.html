@@ -1420,11 +1420,13 @@ async function sendOrderConfirmedWhatsApp(order){
   const r = await fetch(CURRENT_SB_URL + '/functions/v1/meta-send', {
     method: 'POST',
     headers: { 'Content-Type':'application/json', 'Authorization':'Bearer '+session.access_token },
-    body: JSON.stringify({ phone: order.phone, template_key: 'order_confirmed',
-      params: { customer_name: order.customer||'', order_number: '*'+String(order.id||'').slice(0,8).toUpperCase()+'*' } })
+    // Só o id do pedido vai (jjs-06, 30/10/2026): o meta-send lê telefone e nome do próprio
+    // pedido no banco e exige status "confirmado" — telefone e texto deixaram de vir daqui.
+    body: JSON.stringify({ template_key: 'order_confirmed', order_id: order.id })
   });
   const data = await r.json();
   if(!r.ok || !data.ok) console.error('meta-send falhou:', data.error);
+  else if(data.already_sent) console.info('meta-send: aviso deste pedido já tinha sido enviado, não repetiu.');
 }
 async function recordInfinitePayAbsorbedFee(order, saleId){
   const settings = await getSettings();

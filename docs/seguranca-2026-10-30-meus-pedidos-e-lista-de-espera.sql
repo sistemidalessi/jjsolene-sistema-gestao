@@ -2,7 +2,12 @@
 -- Segurança 30/10/2026 — achados jjs-05 ("Meus pedidos" por telefone) e
 -- jjs-13 (lista de espera sem limite). Rodar no SQL Editor do painel.
 --
--- STATUS: ver nota no fim do arquivo.
+-- STATUS: APLICADO EM PRODUÇÃO em 30/10/2026 com o "sim" do Anderson, pelo SQL Editor
+-- do painel. Etapa 1 ensaiada numa transação desfeita (6/6: anon sem get_my_orders,
+-- anon com waitlist_join, cadastro grava 1 e não duplica, telefone ruim e produto
+-- inexistente recusados) e aplicada às 12:05; catálogo novo publicado às 12:06; etapa 2
+-- às 12:18, depois do cache do Pages. Provado de fora com a chave pública: get_my_orders
+-- → 42501; insert direto em waitlist → recusado; waitlist_join segue respondendo.
 --
 -- jjs-05: get_my_orders(p_phone) era executável pelo visitante e devolvia nome,
 -- saldo de cashback e compras de QUEM TIVESSE aquele telefone — e buscava na

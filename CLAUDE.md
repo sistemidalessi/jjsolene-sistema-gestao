@@ -197,6 +197,15 @@ shipping-carrier API proxying, not a Postgres RPC) — the admin side never hits
      is ever added, create it `with (security_invoker = true)`, or it bypasses the RLS of the
      tables under it (that exact thing had to be patched in Rafa 3D the same day).
   4. Every `security definer` function carries `set search_path = public`.
+  5. **`meta-send` templates go by `order_id`, never by phone** (2026-10-30, finding `jjs-06`):
+     the function reads phone and name from the confirmed order in the DB, refuses any other
+     status, sends one notice per order+template, and requires the caller to have a `profiles`
+     row (a valid JWT alone gets 403). Until then any logged-in account could use the store's
+     official WhatsApp number to send the template to any phone with any text, creating ghost
+     conversations. Manual replies are capped at 4000 chars. Verified in production with the
+     owner's session: free-phone payload, unknown/malformed `order_id`, unknown template and
+     oversized reply all refused before any send; the real send path is exercised by the next
+     genuine order confirmation (watch the browser console or the function logs).
   5. `attach_payment_receipt` is a *claim from the customer's browser*, not proof of payment — the
      card check (`payment_check`) runs client-side. The Pedidos screen says so; moving that check
      into an Edge Function is the open improvement.

@@ -2,15 +2,27 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
+<!-- SEGURANCA (30/10/2026, achado jjs-08): Content Security Policy. O GitHub Pages nao manda cabecalho HTTP, entao a
+     politica vem por <meta> - e por isso NAO existe modo "so relatar": o que nao estiver listado aqui o navegador
+     bloqueia. A lista e exatamente o que o admin usa (levantado passeando pelas 18 abas com a sessao logada):
+       script  -> jsDelivr (supabase-js, JsBarcode, cropperjs) e o GSI do Google (Agenda -> Google Calendar)
+       style   -> Google Fonts (CSS), jsDelivr (cropper.css)      font -> fonts.gstatic.com
+       img     -> Storage do Supabase, data: e blob: (previews, cropper, barcodes)
+       connect -> Supabase (REST, Auth, Storage, Edge Functions), Google Calendar API e GSI
+       frame   -> accounts.google.com (GSI)
+     'unsafe-inline' em script/style e inevitavel: a app tem ~220 onclick= e ~240 style= no HTML. Entao a politica NAO
+     barra um XSS que ja esteja na pagina; o que ela barra e o passo seguinte do ataque - carregar script de outro
+     dominio, mandar dados pra fora (fetch/img/form pra qualquer lugar fora da lista) e trocar a <base>.
+     As janelas de impressao (window.open('') + document.write) HERDAM esta politica: por isso Google Fonts e o logo
+     do Storage estao liberados, e os <script>window.print()</script> delas funcionam pelo 'unsafe-inline'.
+     Foi ligada so depois de testada ao vivo (injetada na pagina publicada com a sessao do Anderson): 18 abas, 443
+     imagens, janela de impressao de teste - zero violacoes. Um dominio novo (CDN, API, imagem de fora) PRECISA
+     entrar aqui antes, senao a funcionalidade nova simplesmente nao carrega (erro "Refused to ..." no console).
+     A URL do Supabase e a do projeto de producao; "Project URL" de Conexao apontando pra outro projeto e bloqueado
+     de proposito. frame-ancestors, sandbox e report-uri nao funcionam em <meta> - nao adianta por aqui. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://accounts.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net https://accounts.google.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https://pcvcpylcpuvprpkydbxf.supabase.co; connect-src 'self' https://pcvcpylcpuvprpkydbxf.supabase.co https://www.googleapis.com https://accounts.google.com https://oauth2.googleapis.com; frame-src https://accounts.google.com; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>JJ Solene — Sistema de Gestão</title>
-<script type="importmap">
-{
-  "imports": {
-    "onnxruntime-web": "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0-dev.20250206-d981b153d3/dist/ort.min.mjs"
-  }
-}
-</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
 <!-- SEGURANCA (21/09/2026, achado jjs-08): toda biblioteca de CDN vem com VERSAO EXATA + integrity (SRI) + crossorigin.

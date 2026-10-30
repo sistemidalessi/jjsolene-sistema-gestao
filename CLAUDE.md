@@ -23,8 +23,21 @@ a library: change the version in the URL, recompute the hash
 (`curl -s URL | openssl dgst -sha384 -binary | openssl base64 -A`), check it against the hash the
 registry declares (`https://data.jsdelivr.com/v1/packages/npm/<pkg>@<ver>?structure=flat`), and load
 both the admin and the catalog — **a wrong hash means the library silently doesn't load and the app
-won't open.** Not covered, by nature: Google's GSI client and Google Fonts (served dynamically), and
-the `onnxruntime-web` dynamic import (pinned to an exact version, but it pulls its own wasm).
+won't open.** Not covered, by nature: Google's GSI client and Google Fonts (served dynamically).
+
+**The admin has a Content Security Policy via `<meta>`** (since 2026-10-30, same finding `jjs-08`;
+GitHub Pages sends no headers, so there is no report-only mode — anything not listed is blocked).
+The allow-list is exactly what the admin uses: jsDelivr + Google GSI for scripts, Google Fonts +
+jsDelivr for styles, `fonts.gstatic.com` for fonts, Supabase Storage + `data:`/`blob:` for images,
+Supabase + Google Calendar API + GSI for `connect-src`, `accounts.google.com` for frames;
+`object-src 'none'`, `base-uri 'self'`, `form-action 'self'`. `'unsafe-inline'` stays on for scripts
+and styles because the app has ~220 inline `onclick=` and ~240 `style=` — so the policy does **not**
+stop an XSS already in the page; it stops the next step (loading a script from elsewhere, exfiltrating
+via fetch/img/form, hijacking `<base>`). Print windows (`window.open('')` + `document.write`) inherit
+it, which is why Google Fonts and the Storage logo are allowed. **Any new external domain (CDN, API,
+image host) must be added to the meta first, or the feature silently fails with a "Refused to …"
+console error.** Pointing "Project URL" at another Supabase project is blocked on purpose. The dead
+`onnxruntime-web` importmap (background removal was dropped in `76dbea1`) was removed with it.
 
 The app loads four CDN scripts: `@supabase/supabase-js` (2.116.0), `JsBarcode` (barcode rendering for
 product labels), `cropperjs` (4:5 crop on the main product photo), and Google's GSI client (one-way

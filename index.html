@@ -344,7 +344,11 @@ const SB_ANON_KEY = 'jjsolene_sb_anon';
 // qualquer aparelho/navegador direto na tela de login, sem precisar colar nada.
 const DEFAULT_SB_URL = 'https://pcvcpylcpuvprpkydbxf.supabase.co';
 const DEFAULT_SB_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBjdmNweWxjcHV2cHJwa3lkYnhmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUxNzE1NzUsImV4cCI6MjEwMDc0NzU3NX0.-Lsvw55ao1TRVv-uybojs6R_Uo7rlXcRseatiECa0fM';
-const CATALOG_PUBLIC_URL = 'https://afdalessi-commits.github.io/catalogo-jjsolene/catalogo/';
+// Endereço do catálogo calculado de onde o admin está (pasta catalogo/ ao lado do index.html). Era fixo no
+// endereço antigo (afdalessi-commits.github.io/catalogo-jjsolene/), que dá 404 desde a mudança do repositório:
+// o link de cupom da vendedora abria uma página de erro (achado em 03/11/2026). Assim vale também se o
+// sistema ganhar domínio próprio.
+const CATALOG_PUBLIC_URL = location.origin + location.pathname.replace(/[^\/]*$/, '') + 'catalogo/';
 let SUPA = null;
 let CURRENT_SB_URL = null;
 let currentUser = null;

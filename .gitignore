@@ -1,1 +1,12 @@
 supabase/.temp/
+
+# segredos e arquivos locais (achado jjs-15, 03/11/2026)
+.env
+.env.*
+*.local.*
+.claude/settings.local.json
+
+# lixo de sistema e de dependência
+node_modules/
+.DS_Store
+Thumbs.db

@@ -70,6 +70,13 @@ The freight function `melhor-envio-callback` (since 2026-11-03, finding `jjs-11`
 per 10 min through `rate_limit_try` on the `rate_limits` table (service_role only; fail-open), validates the
 CEP, caps items at 50, and returns a generic error — the Melhor Envio detail only goes to the function log.
 To unblock an IP by hand: `delete from public.rate_limits where key like 'frete:ip:%';` Never `revoke select on
+
+**Privacy page (`privacidade/index.html`, rewritten 2026-11-03, finding `jjs-14`)** lists what the system really
+collects (catalog order: name, phone, address, notes; store customer record: e-mail, CPF, birthday, Instagram;
+Bag Delivery promissory note with CPF), purposes, sharing (Meta, Melhor Envio, payment, Supabase), retention
+(5 years for sales/fiscal data) and rights; it is linked from the catalog footer and from the order form.
+**Pending:** Anderson will send the name of the store owner who acts as data officer (encarregada) — until then
+the page points to the store WhatsApp/Instagram. New personal data collected anywhere → update this page.
 products/settings from anon`: a table-level revoke also wipes the column grants. TRUNCATE is off for
 `authenticated` too.
 

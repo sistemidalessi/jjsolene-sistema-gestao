@@ -453,7 +453,7 @@ function buildFooter(){
   wrap.appendChild(main);
 
   var bottom = document.createElement("div"); bottom.className = "footer-bottom";
-  bottom.innerHTML = "<div class=\"footer-bottom-inner\"><div class=\"footer-bottom-hr\">♡</div><h3 class=\"footer-bottom-title\">Vista-se de <em>presença</em></h3><p class=\"footer-bottom-copy\">© "+year+" "+esc(s.store_name||"")+". Todos os direitos reservados.</p><div style=\"margin-top:8px;opacity:0.8;\"><img src=\"../assets/sistemi-dalessi-logo.jpg\" alt=\"Sistemi Dalessi\" style=\"width:50px;height:50px;border-radius:8px;object-fit:cover;display:block;margin:0 auto 4px;\"><p class=\"footer-bottom-copy\" style=\"font-size:11px;\">Sistema desenvolvido por <strong>Sistemi Dalessi</strong> — Sistemas sob Medida</p></div></div>";
+  bottom.innerHTML = "<div class=\"footer-bottom-inner\"><div class=\"footer-bottom-hr\">♡</div><h3 class=\"footer-bottom-title\">Vista-se de <em>presença</em></h3><p class=\"footer-bottom-copy\">© "+year+" "+esc(s.store_name||"")+". Todos os direitos reservados.</p><p class=\"footer-bottom-copy\"><a href=\"../privacidade/\" style=\"color:#e9c896;\">Política de privacidade</a></p><div style=\"margin-top:8px;opacity:0.8;\"><img src=\"../assets/sistemi-dalessi-logo.jpg\" alt=\"Sistemi Dalessi\" style=\"width:50px;height:50px;border-radius:8px;object-fit:cover;display:block;margin:0 auto 4px;\"><p class=\"footer-bottom-copy\" style=\"font-size:11px;\">Sistema desenvolvido por <strong>Sistemi Dalessi</strong> — Sistemas sob Medida</p></div></div>";
   wrap.appendChild(bottom);
 
   return wrap;
@@ -1557,6 +1557,7 @@ function renderCart(){
   footHtml += "<input id=\"chk_name\" placeholder=\"Nome completo\">";
   footHtml += "<input id=\"chk_phone\" placeholder=\"Seu telefone (com DDD)\" oninput=\"applyMask(this,maskPhoneBR)\">";
   footHtml += "<select id=\"chk_source\"><option value=\"\">Como você nos conheceu?</option><option value=\"Instagram\">Instagram</option><option value=\"Facebook\">Facebook</option><option value=\"TikTok\">TikTok</option><option value=\"Google\">Google</option><option value=\"Indicação de amiga(o)\">Indicação de amiga(o)</option><option value=\"WhatsApp\">WhatsApp</option><option value=\"Já sou cliente\">Já sou cliente</option><option value=\"Outro\">Outro</option></select>";
+  footHtml += "<p style=\"font-size:11.5px;color:#8a7568;margin:4px 0 8px;\">Seus dados servem para separar, entregar e acompanhar este pedido. Veja a <a href=\"../privacidade/\" target=\"_blank\" rel=\"noopener\">política de privacidade</a>.</p>";
   footHtml += "<div class=\"line\"><span>Subtotal</span><span>"+money(subtotal)+"</span></div>";
   if(discount>0){ footHtml += "<div class=\"line\"><span>Desconto</span><span>-"+money(discount)+"</span></div>"; }
   if(selectedShipping){ footHtml += "<div class=\"line\"><span>Frete</span><span>"+(selectedShipping.id==="combinar"?"A combinar":money(shippingCost))+"</span></div>"; }

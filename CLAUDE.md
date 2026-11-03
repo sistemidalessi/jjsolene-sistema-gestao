@@ -57,6 +57,18 @@ phone 10–11 digits, product visible in the catalog, no duplicate per phone+pro
 24 h, 150 per hour overall; `anon` has no INSERT on `waitlist` anymore. SQL and rationale in
 `docs/seguranca-2026-10-30-meus-pedidos-e-lista-de-espera.sql`.
 
+**The visitor (`anon`) has only what the catalog reads** (since 2026-11-03,
+`docs/seguranca-2026-11-03-visitante-so-o-catalogo.sql`): table-level SELECT on exactly `banners`,
+`categories`, `gift_rules`, `product_media`, `product_sizes` (the catalog asks `"*"` there), column-level
+SELECT on `products` and `settings` (since 2026-09-21), and nothing else — no INSERT/UPDATE/DELETE/TRUNCATE
+anywhere, no SELECT on any other table or view. Before this the visitor held table privileges on almost
+everything (old Supabase default) and only the policies' "is staff" conditions stood in the way. The
+checkout RPCs are SECURITY DEFINER, so they don't depend on table privileges. **A new table the catalog
+reads needs an explicit `grant select ... to anon` (whole table or per column) in the same commit as the
+catalog change — otherwise the catalog gets 42501 and that part opens empty.** Never `revoke select on
+products/settings from anon`: a table-level revoke also wipes the column grants. TRUNCATE is off for
+`authenticated` too.
+
 The app loads four CDN scripts: `@supabase/supabase-js` (2.116.0), `JsBarcode` (barcode rendering for
 product labels), `cropperjs` (4:5 crop on the main product photo), and Google's GSI client (one-way
 Agenda → Google Calendar sync).

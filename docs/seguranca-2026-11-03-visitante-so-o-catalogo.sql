@@ -3,7 +3,13 @@
 --
 -- STATUS: PREPARADO E ENSAIADO em 03/11/2026 no banco de produção, pelo SQL Editor
 -- (bloco DO que termina em erro proposital: o Postgres desfez tudo; conferido
--- depois que nenhuma permissão mudou). NÃO APLICADO: espera o "sim" do Anderson.
+-- depois que nenhuma permissão mudou). APLICADO EM PRODUÇÃO no mesmo dia, com o
+-- "sim" do Anderson. Conferência: anon com SELECT de tabela só nas 5 do catálogo,
+-- nenhuma escrita/TRUNCATE sobrou, grants de coluna intactos (29 em products, 30
+-- em settings). De fora, com a chave pública: catálogo 200 (183 produtos com
+-- tamanhos, settings, categorias, fotos, banners, brindes com produtos), cupom 200;
+-- customers, orders, finance, sales, profiles e insert em categories → 401/42501.
+-- Catálogo publicado aberto no navegador: 182 produtos, 28 categorias, sem erro.
 -- Resultado do ensaio:
 --   anon com SELECT de tabela: banners, categories, gift_rules, product_media, product_sizes
 --   escrita/TRUNCATE que sobrou para anon (e TRUNCATE para authenticated): nenhuma

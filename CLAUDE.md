@@ -75,8 +75,8 @@ To unblock an IP by hand: `delete from public.rate_limits where key like 'frete:
 collects (catalog order: name, phone, address, notes; store customer record: e-mail, CPF, birthday, Instagram;
 Bag Delivery promissory note with CPF), purposes, sharing (Meta, Melhor Envio, payment, Supabase), retention
 (5 years for sales/fiscal data) and rights; it is linked from the catalog footer and from the order form.
-**Pending:** Anderson will send the name of the store owner who acts as data officer (encarregada) — until then
-the page points to the store WhatsApp/Instagram. New personal data collected anywhere → update this page.
+Data officers (encarregadas), named by Anderson on 2026-11-03: Jesielle de Araujo Dalessi and Joice Trevisam,
+reached through the store WhatsApp/Instagram. New personal data collected anywhere → update this page.
 products/settings from anon`: a table-level revoke also wipes the column grants. TRUNCATE is off for
 `authenticated` too.
 

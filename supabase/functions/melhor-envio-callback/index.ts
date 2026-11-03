@@ -160,6 +160,28 @@ async function quoteShipping(cepDestino: string, itens: Array<{ weight_kg: numbe
   return [];
 }
 
+// Limite por IP na cotação (achado jjs-11, 03/11/2026): a função é pública (o catálogo chama sem login) e cada
+// cotação gasta a cota da conta do Melhor Envio. Contador no banco (rate_limits / rate_limit_try, SQL em
+// docs/seguranca-2026-11-03-limite-do-frete.sql), só a service_role alcança. FALHA ABERTA: sem a função no banco
+// ou com erro, deixa passar e loga — limite nunca derruba uma venda honesta. 60 cotações por IP a cada 10 min:
+// uma pessoa digitando CEP e mudando quantidade não chega perto; um script chega.
+function ipDe(req: Request): string {
+  const xff = req.headers.get("x-forwarded-for") || "";
+  return (xff.split(",")[0].trim() || req.headers.get("cf-connecting-ip") || "sem-ip").slice(0, 64);
+}
+async function cabeNoLimite(chave: string, limite: number, janelaS: number): Promise<boolean> {
+  try {
+    const { data, error } = await sb.rpc("rate_limit_try", { p_key: chave, p_limit: limite, p_window_s: janelaS });
+    if (error) { console.error("rate_limit_try falhou (deixando passar):", error.message); return true; }
+    return data !== false;
+  } catch (e) {
+    console.error("rate_limit_try exceção (deixando passar):", e);
+    return true;
+  }
+}
+const json = (corpo: unknown, status = 200) =>
+  cors(new Response(JSON.stringify(corpo), { status, headers: { "Content-Type": "application/json" } }));
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return cors(new Response("ok"));
 
@@ -179,18 +201,27 @@ Deno.serve(async (req: Request) => {
     }
 
     if (req.method === "POST") {
+      if (!(await cabeNoLimite("frete:ip:" + ipDe(req), 60, 600))) {
+        return cors(new Response(JSON.stringify({ error: "Muitas consultas de frete seguidas. Espere uns minutos e tente de novo." }),
+          { status: 429, headers: { "Content-Type": "application/json", "Retry-After": "600" } }));
+      }
       const body = await req.json();
-      const result = await quoteShipping(body.cep_destino, body.itens || []);
-      return cors(new Response(JSON.stringify(result), { headers: { "Content-Type": "application/json" } }));
+      const cep = String(body?.cep_destino ?? "").replace(/\D/g, "");
+      const itens = Array.isArray(body?.itens) ? body.itens.slice(0, 50) : [];
+      if (cep.length !== 8) return json({ error: "CEP inválido." }, 400);
+      const result = await quoteShipping(cep, itens);
+      return json(result);
     }
 
     return cors(new Response("Método não suportado", { status: 405 }));
   } catch (e) {
-    return cors(
-      new Response(JSON.stringify({ error: String(e?.message || e) }), {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      })
-    );
+    // O detalhe (resposta do Melhor Envio, token, etc.) vai só pro log da função; quem chamou recebe uma frase
+    // genérica (achado jjs-11). O catálogo já mostra a própria mensagem de "não deu pra calcular o frete".
+    console.error("melhor-envio-callback:", e?.message || e);
+    if (req.method === "GET") {
+      return cors(new Response("<h2>Não deu pra conectar o Melhor Envio.</h2><p>O motivo ficou no log da função (Supabase → Edge Functions → melhor-envio-callback → Logs).</p>",
+        { status: 500, headers: { "Content-Type": "text/html; charset=utf-8" } }));
+    }
+    return json({ error: "Não foi possível calcular o frete agora." }, 500);
   }
 });

@@ -65,7 +65,11 @@ anywhere, no SELECT on any other table or view. Before this the visitor held tab
 everything (old Supabase default) and only the policies' "is staff" conditions stood in the way. The
 checkout RPCs are SECURITY DEFINER, so they don't depend on table privileges. **A new table the catalog
 reads needs an explicit `grant select ... to anon` (whole table or per column) in the same commit as the
-catalog change — otherwise the catalog gets 42501 and that part opens empty.** Never `revoke select on
+catalog change — otherwise the catalog gets 42501 and that part opens empty.**
+The freight function `melhor-envio-callback` (since 2026-11-03, finding `jjs-11`) allows 60 quotes per IP
+per 10 min through `rate_limit_try` on the `rate_limits` table (service_role only; fail-open), validates the
+CEP, caps items at 50, and returns a generic error — the Melhor Envio detail only goes to the function log.
+To unblock an IP by hand: `delete from public.rate_limits where key like 'frete:ip:%';` Never `revoke select on
 products/settings from anon`: a table-level revoke also wipes the column grants. TRUNCATE is off for
 `authenticated` too.
 

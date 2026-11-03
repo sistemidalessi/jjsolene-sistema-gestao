@@ -5,8 +5,11 @@
 -- STATUS: PREPARADO E ENSAIADO em 03/11/2026 (transação desfeita; conferido depois
 -- que a tabela e a função não ficaram). Ensaio: como service_role, 2 tentativas
 -- cabem e a 3ª estoura (t,t,f); anon não lê a tabela; anon e authenticated não
--- executam a função. NÃO APLICADO: espera o "sim" do Anderson, junto com a
--- publicação da Edge Function melhor-envio-callback que usa o limite.
+-- executam a função. APLICADO EM PRODUÇÃO no mesmo dia, com o "sim" do Anderson,
+-- junto com a melhor-envio-callback nova. De fora: cotação 200 (JeT R$ 18,47), CEP
+-- inválido 400, corpo quebrado 500 com mensagem genérica; com o contador do IP do
+-- teste posto no teto, 429 com Retry-After 600 (contador apagado depois). Catálogo
+-- publicado cotando normalmente.
 --
 -- A Edge Function melhor-envio-callback é pública (o catálogo chama sem login) e
 -- cada cotação gasta a cota da conta do Melhor Envio. Ela passa a perguntar ao

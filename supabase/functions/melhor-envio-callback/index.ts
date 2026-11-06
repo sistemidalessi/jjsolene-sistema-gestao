@@ -2,6 +2,14 @@
 // Duas responsabilidades:
 //   1) GET  ?code=...        -> callback do OAuth (troca o "code" por access_token/refresh_token)
 //   2) POST { cep_destino, itens } -> cotação de frete pro checkout do catálogo público
+//   3) POST { acao: "fixar", order_id, service_id, cep } -> grava no pedido pendente o frete RECOTADO aqui, com os
+//      itens do pedido e as medidas dos produtos do banco (06/11/2026). Antes o catálogo gravava o preço que o
+//      navegador mandava (set_order_shipping), e dava para gravar frete R$ 0,00.
+//
+// OAuth (06/11/2026): o GET ?code= só é aceito com ?state= igual ao Secret ME_OAUTH_STATE. Sem esse Secret a
+// conexão fica FECHADA: antes, qualquer pessoa que montasse a URL de autorização com o client_id da loja trocava o
+// token da JJ pelo da conta dela. Para reconectar: gravar ME_OAUTH_STATE (valor aleatório) nos Secrets, abrir a
+// URL de autorização com &state=<o mesmo valor>, autorizar, e apagar o Secret.
 //
 // Variáveis de ambiente necessárias (configurar em Project Settings > Edge Functions > Secrets):
 //   MELHORENVIO_CLIENT_ID
@@ -43,6 +51,14 @@ function diagSegredos(): string {
     tinha_cr_ou_lf: tudo.includes(String.fromCharCode(13)) || tudo.includes(String.fromCharCode(10)),
     tinha_espaco_nas_pontas: tudo !== tudo.trim(),
   });
+}
+
+// comparação sem vazar pelo tempo quanto do segredo bateu
+function igual(a: string, b: string): boolean {
+  if (!a || !b || a.length !== b.length) return false;
+  let d = 0;
+  for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return d === 0;
 }
 
 const sb = createClient(
@@ -122,7 +138,7 @@ async function quoteShipping(cepDestino: string, itens: Array<{ weight_kg: numbe
   if (!settings?.origin_cep) throw new Error("CEP de origem não configurado em Configurações.");
 
   const products = itens.flatMap((it) =>
-    Array.from({ length: it.qty || 1 }).map(() => ({
+    Array.from({ length: Math.min(50, Math.max(1, Math.floor(Number(it.qty) || 1))) }).map(() => ({
       weight: it.weight_kg || 0.3,
       width: it.width_cm || 20,
       height: it.height_cm || 5,
@@ -179,6 +195,35 @@ async function cabeNoLimite(chave: string, limite: number, janelaS: number): Pro
     return true;
   }
 }
+// Frete do pedido recotado aqui (o equivalente do r3d-01 do Rafa): itens do pedido e medidas dos produtos saem do
+// banco, o preço sai do Melhor Envio, e só o serviço escolhido e o CEP vêm do catálogo. O brinde (linha de preço 0
+// do gift_product_id) fica fora, como o catálogo faz na cotação.
+async function fixarFrete(body: Record<string, unknown>) {
+  const orderId = String(body.order_id ?? "");
+  const cep = String(body.cep ?? "").replace(/\D/g, "");
+  const servico = Number(body.service_id);
+  if (!/^[0-9a-f-]{36}$/i.test(orderId) || cep.length !== 8 || !Number.isInteger(servico)) return { error: "Pedido, CEP ou serviço inválido." };
+  const { data: pedido } = await sb.from("orders").select("id, status, gift_product_id").eq("id", orderId).maybeSingle();
+  if (!pedido || pedido.status !== "pendente") return { error: "Pedido não encontrado." };
+  const { data: linhas } = await sb.from("order_items").select("product_id, qty, price").eq("order_id", orderId);
+  const itens = (linhas || []).filter((l) => !(pedido.gift_product_id && l.product_id === pedido.gift_product_id && Number(l.price) === 0));
+  if (!itens.length) return { error: "Pedido sem itens." };
+  const { data: prods } = await sb.from("products").select("id, weight_kg, length_cm, width_cm, height_cm").in("id", itens.map((l) => l.product_id));
+  const medidas = new Map((prods || []).map((p) => [p.id, p]));
+  const opcoes = await quoteShipping(cep, itens.slice(0, 50).map((l) => {
+    const p = medidas.get(l.product_id) || {};
+    return { weight_kg: p.weight_kg, length_cm: p.length_cm, width_cm: p.width_cm, height_cm: p.height_cm, qty: l.qty };
+  }));
+  const op = opcoes.find((o) => Number((o as Record<string, unknown>).id) === servico) as Record<string, any> | undefined;
+  const preco = Number(op?.price);
+  if (!op || op.error || !(preco >= 0)) return { error: "Esse frete não está mais disponível. Calcule de novo." };
+  const transportadora = (String(op.company?.name ?? "") + " - " + String(op.name ?? "")).slice(0, 80);
+  const { error } = await sb.from("orders").update({ shipping_cost: preco, shipping_carrier: transportadora, shipping_cep: cep })
+    .eq("id", orderId).eq("status", "pendente");
+  if (error) { console.error("fixar frete: não gravou", error.message); return { error: "Não deu para gravar o frete agora." }; }
+  return { ok: true, price: preco, carrier: transportadora };
+}
+
 const json = (corpo: unknown, status = 200) =>
   cors(new Response(JSON.stringify(corpo), { status, headers: { "Content-Type": "application/json" } }));
 
@@ -189,6 +234,11 @@ Deno.serve(async (req: Request) => {
     const url = new URL(req.url);
 
     if (req.method === "GET" && url.searchParams.has("code")) {
+      if (!igual(url.searchParams.get("state") || "", env("ME_OAUTH_STATE"))) {
+        return cors(new Response(
+          "<h2>Conexão com o Melhor Envio fechada.</h2><p>Para conectar de novo, siga o passo a passo no início do código desta função.</p>",
+          { status: 403, headers: { "Content-Type": "text/html; charset=utf-8" } }));
+      }
       const code = url.searchParams.get("code")!;
       const tokens = await exchangeCode(code);
       await saveTokens(tokens);
@@ -206,6 +256,7 @@ Deno.serve(async (req: Request) => {
           { status: 429, headers: { "Content-Type": "application/json", "Retry-After": "600" } }));
       }
       const body = await req.json();
+      if (body?.acao === "fixar") return json(await fixarFrete(body));
       const cep = String(body?.cep_destino ?? "").replace(/\D/g, "");
       const itens = Array.isArray(body?.itens) ? body.itens.slice(0, 50) : [];
       if (cep.length !== 8) return json({ error: "CEP inválido." }, 400);

@@ -1,0 +1,15 @@
+-- =====================================================================
+-- Frete do pedido recotado no servidor (06/11/2026)
+--
+-- Achado M3 da revisão das Edge Functions (docs/auditoria-edge-functions-2026-11-06.md do
+-- sistemi-dalessi): o catálogo gravava no pedido o frete que o navegador mandava
+-- (set_order_shipping aceitava de 0 a 9.999), e dava para gravar R$ 0,00.
+-- Agora o catálogo chama a melhor-envio-callback com { acao: "fixar", order_id, service_id, cep }:
+-- itens do pedido e medidas dos produtos saem do banco, o preço sai do Melhor Envio.
+-- Provado em 06/11 com um pedido de teste (gravou 18,47 "JeT - Standard"; apagado em seguida).
+--
+-- Esta parte só roda DEPOIS de o catálogo novo estar no ar e o cache do GitHub Pages
+-- (max-age 600) vencer: quem ainda estivesse com o catálogo velho aberto perderia o frete.
+-- O admin logado não usa a RPC; a conta logada fica com o EXECUTE (inofensivo).
+-- =====================================================================
+revoke execute on function public.set_order_shipping(uuid, numeric, text, text) from public, anon;

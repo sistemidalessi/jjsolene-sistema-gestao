@@ -247,7 +247,12 @@ shipping-carrier API proxying, not a Postgres RPC) — the admin side never hits
      an account read every customer (CPF included) and order. "Allow new users to sign up" was
      switched **off** in the dashboard on 2026-09-21 (`auth/v1/settings` now answers
      `disable_signup: true`, and a real `signup` call returns `signup_disabled`) — keep it off;
-     staff are created via Authentication → Add user. **Storage too** (06/11/2026,
+     staff are created via Authentication → Add user. **Shipping cost is server-side** (06/11/2026,
+     `docs/seguranca-2026-11-06-frete-no-servidor.sql`): the catalog calls `melhor-envio-callback` with
+     `{ acao: "fixar", order_id, service_id, cep }`, which re-quotes from the order's items and the products'
+     dimensions and writes the price; `set_order_shipping` is no longer executable by anon. **OAuth of Melhor
+     Envio is closed by default**: the callback only accepts `?state=` equal to the Secret `ME_OAUTH_STATE`
+     (set it, authorize with `&state=<same value>`, then delete it). **Storage too** (06/11/2026,
      `docs/seguranca-2026-11-06-storage-fotos.sql`): the `product-images` policy used to be
      `auth.role() = 'authenticated'` for ALL and visitors could list the bucket; now one policy
      `product_images_staff` (ALL to authenticated, `bucket_id` + `is_staff()`), no policy for

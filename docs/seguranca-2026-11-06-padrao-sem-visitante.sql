@@ -1,5 +1,9 @@
 -- =====================================================================
 -- Tabela, sequência e função NOVAS não nascem abertas ao visitante (06/11/2026)
+-- APLICADO em 06/11/2026 com o "sim" do Anderson. Ensaio: tabela nova abria ao
+-- visitante antes e não abre depois; anon fora da sequência das notas; as 5
+-- tabelas do catálogo iguais. Provado de fora: o catálogo lê categories,
+-- banners, product_sizes e products (200) e a página publicada abre.
 --
 -- O endurecimento de 03/11 (seguranca-2026-11-03-visitante-so-o-catalogo.sql)
 -- tirou o anon das tabelas que existiam, mas o PADRÃO do postgres continua

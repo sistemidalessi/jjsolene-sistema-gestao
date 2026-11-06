@@ -247,7 +247,12 @@ shipping-carrier API proxying, not a Postgres RPC) — the admin side never hits
      an account read every customer (CPF included) and order. "Allow new users to sign up" was
      switched **off** in the dashboard on 2026-09-21 (`auth/v1/settings` now answers
      `disable_signup: true`, and a real `signup` call returns `signup_disabled`) — keep it off;
-     staff are created via Authentication → Add user. There are no views in this schema; if one
+     staff are created via Authentication → Add user. **Storage too** (06/11/2026,
+     `docs/seguranca-2026-11-06-storage-fotos.sql`): the `product-images` policy used to be
+     `auth.role() = 'authenticated'` for ALL and visitors could list the bucket; now one policy
+     `product_images_staff` (ALL to authenticated, `bucket_id` + `is_staff()`), no policy for
+     anon (public URLs don't need one) and a 50 MB file limit. Check with
+     `docs/auditoria-storage.sql` in sistemi-dalessi. There are no views in this schema; if one
      is ever added, create it `with (security_invoker = true)`, or it bypasses the RLS of the
      tables under it (that exact thing had to be patched in Rafa 3D the same day).
   4. Every `security definer` function carries `set search_path = public`.

@@ -1,5 +1,8 @@
 -- =====================================================================
--- Storage das fotos de produto (06/11/2026)
+-- Storage das fotos de produto (06/11/2026) — APLICADO em 06/11/2026 com o
+-- "sim" do Anderson, depois do ensaio (visitante listava 215 arquivos e passou
+-- a 0; a equipe segue com 215). Provado de fora com a chave pública: a
+-- listagem do bucket volta vazia e a foto do catálogo abre (HTTP 200).
 --
 -- Achado pela consulta docs/auditoria-storage.sql do sistemi-dalessi, rodada
 -- no painel em 06/11/2026. A auditoria de 21/09 olhou só o schema public;

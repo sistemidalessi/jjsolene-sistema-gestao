@@ -6,6 +6,8 @@
 -- (set_order_shipping aceitava de 0 a 9.999), e dava para gravar R$ 0,00.
 -- Agora o catálogo chama a melhor-envio-callback com { acao: "fixar", order_id, service_id, cep }:
 -- itens do pedido e medidas dos produtos saem do banco, o preço sai do Melhor Envio.
+-- APLICADO em 06/11/2026 às 10h38 (catálogo novo no ar às 10h27 + cache), com o "sim" do Anderson; de fora,
+-- o visitante chamando set_order_shipping recebe permissão negada.
 -- Provado em 06/11 com um pedido de teste (gravou 18,47 "JeT - Standard"; apagado em seguida).
 --
 -- Esta parte só roda DEPOIS de o catálogo novo estar no ar e o cache do GitHub Pages

@@ -760,8 +760,9 @@ async function ensureBestsellerCounts(){
   if(CATALOG.bestsellerCounts) return CATALOG.bestsellerCounts;
   try{
     var res = await sb.rpc("get_bestseller_counts");
-    var m = new Map();
-    (res.data||[]).forEach(function(row){ m.set(row.product_id, Number(row.total_sold)||0); });
+    var m = new Map(), lista = res.data||[];
+    // o banco devolve só a posição (1 = o mais vendido), nunca quantas peças: vira nota maior para quem vende mais
+    lista.forEach(function(row){ m.set(row.product_id, lista.length + 1 - (Number(row.posicao)||lista.length + 1)); });
     CATALOG.bestsellerCounts = m;
   }catch(e){ CATALOG.bestsellerCounts = new Map(); }
   return CATALOG.bestsellerCounts;

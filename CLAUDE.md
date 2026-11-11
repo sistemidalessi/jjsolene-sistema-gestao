@@ -274,9 +274,12 @@ shipping-carrier API proxying, not a Postgres RPC) — the admin side never hits
      card check (`payment_check`) runs client-side. The Pedidos screen says so; moving that check
      into an Edge Function is the open improvement.
   Still open from the 2026-09-11 audit: `get_my_orders` answers to anyone who knows a phone
-  number. Also found on 2026-09-21, not security: **`get_bestseller_counts` does not exist in the
-  database** (`docs/filtros-catalogo-schema.sql` defines it, but that part was never run or was
-  dropped) — the catalog calls it, gets a 404 and silently skips the "mais vendidos" ordering.
+  number. Found on 2026-09-21 and **fixed on 2026-11-11** (`917a3d4`, migration
+  `catalogo_mais_vendidos_por_posicao`): `get_bestseller_counts` had never existed in the database
+  (the catalog got a 404 and the "mais vendidos" order did nothing). It now returns only
+  `(product_id, posicao)` — rank 1 = best seller — for products with `show_in_catalog`, **never the
+  quantities sold** (sales volume is not public); the catalog turns the rank into a sort score.
+  Source in `docs/filtros-catalogo-schema.sql`. Returns `[]` until the first sale is recorded.
 - The pattern behind the `set_order_*` family is worth copying: `reserve_stock` isn't safe to modify
   blind, so every new checkout field gets its own tiny setter RPC called right after the reservation
   succeeds, rather than being threaded into `reserve_stock`'s signature.
